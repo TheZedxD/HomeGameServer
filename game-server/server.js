@@ -32,7 +32,9 @@ io.on('connection', (socket) => {
             mode,
             maxPlayers: 2, // Hardcoded for now
             players: {},
-            gameState: null
+            gameState: null,
+            score: { red: 0, black: 0 },
+            round: 1
         };
         
         console.log(`[${mode.toUpperCase()}] Room created: ${roomId} for ${gameType}`);
@@ -70,7 +72,9 @@ io.on('connection', (socket) => {
                  room.players[playerIds[0]].color = 'red';
                  room.players[playerIds[1]].color = 'black';
 
-                 room.gameState = initializeCheckersState(room.players);
+                 room.score = { red: 0, black: 0 };
+                 room.round = 1;
+                 room.gameState = initializeCheckersState(room.players, room.round, room.score);
                  io.to(roomId).emit('gameStart', { gameState: room.gameState, players: room.players });
             } else {
                  socket.emit('error', 'Cannot start: Not all players are ready or the room is not full.');
@@ -90,10 +94,44 @@ io.on('connection', (socket) => {
             room.gameState = validationResult.newGameState;
             const winner = checkForWinner(room.gameState);
             if (winner) {
-                room.gameState.gameOver = true;
-                room.gameState.winner = winner;
+                const winnerColor = winner;
+                const winnerSocketId = Object.keys(room.players).find(pid => room.players[pid].color === winnerColor);
+                const winnerPlayer = winnerSocketId ? room.players[winnerSocketId] : null;
+                const winnerName = winnerPlayer?.username || winnerPlayer?.name || winnerPlayer?.displayName || winnerColor;
+
+                room.score[winnerColor] += 1;
+                room.gameState.score = { ...room.score };
+
+                if (room.score[winnerColor] >= 2) {
+                    room.gameState.gameOver = true;
+                    room.gameState.winner = winnerColor;
+                    room.gameState.winnerName = winnerName;
+                    io.to(roomId).emit('gameStateUpdate', room.gameState);
+                } else {
+                    room.gameState.gameOver = false;
+                    room.gameState.winner = null;
+                    room.gameState.roundWinner = winnerColor;
+                    io.to(roomId).emit('gameStateUpdate', room.gameState);
+
+                    io.to(roomId).emit('roundEnd', {
+                        winnerColor,
+                        winnerName,
+                        redScore: room.score.red,
+                        blackScore: room.score.black,
+                        round: room.round
+                    });
+
+                    room.round += 1;
+                    room.gameState = initializeCheckersState(room.players, room.round, room.score);
+
+                    setTimeout(() => {
+                        io.to(roomId).emit('gameStart', { gameState: room.gameState, players: room.players });
+                    }, 2000);
+                }
+            } else {
+                room.gameState.score = { ...room.score };
+                io.to(roomId).emit('gameStateUpdate', room.gameState);
             }
-            io.to(roomId).emit('gameStateUpdate', room.gameState);
         } else {
             socket.emit('illegalMove', validationResult.reason);
         }
@@ -163,11 +201,20 @@ function getOpenRooms() {
 }
 
 // --- Checkers Game State and Rules Engine (Unchanged) ---
-function initializeCheckersState(players) {
+function initializeCheckersState(players, round = 1, score = { red: 0, black: 0 }) {
   let board = [ [0, 2, 0, 2, 0, 2, 0, 2], [2, 0, 2, 0, 2, 0, 2, 0], [0, 2, 0, 2, 0, 2, 0, 2], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [1, 0, 1, 0, 1, 0, 1, 0], [0, 1, 0, 1, 0, 1, 0, 1], [1, 0, 1, 0, 1, 0, 1, 0] ];
   const redPlayerId = Object.values(players).find(p => p.color === 'red')?.playerId;
   const blackPlayerId = Object.values(players).find(p => p.color === 'black')?.playerId;
-  return { board: board, turn: 'red', players: { red: redPlayerId, black: blackPlayerId }, gameOver: false, winner: null };
+  return {
+    board: board,
+    turn: 'red',
+    players: { red: redPlayerId, black: blackPlayerId },
+    gameOver: false,
+    winner: null,
+    winnerName: null,
+    round,
+    score: { ...score }
+  };
 }
 function validateCheckersMove(gameState, from, to, playerId) {
     const { board, turn, players } = gameState;
