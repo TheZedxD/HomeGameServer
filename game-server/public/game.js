@@ -60,6 +60,11 @@ const availableGames = [
     // { id: 'chess', name: 'Chess', description: 'The ultimate game of kings.' }, // Example of a future game
 ];
 
+const playerColorSwatches = {
+    red: '#ff6b6b',
+    black: '#f5f5dc'
+};
+
 // --- UI State Management ---
 // A simple function to switch between the main UI views.
 function showUI(activeUI) {
@@ -107,7 +112,7 @@ socket.on('updateRoomList', (openRooms) => {
             </div>
             <div style="text-align: right;">
                 <p style="color: var(--text-primary); margin: 0; font-weight: 600;">${room.playerCount}/${room.maxPlayers}</p>
-                <button class="btn btn-success" onclick="joinGame('${room.roomId}')">Join</button>
+                <button class="btn btn-primary" onclick="joinGame('${room.roomId}')">Join</button>
             </div>
         </div>
     `).join('');
@@ -131,7 +136,11 @@ socket.on('gameStart', ({ gameState, players }) => {
     const myPlayer = players[myPlayerId];
     gameEls.mode.textContent = "LAN"; // This could be updated to show 'P2P' as well
     gameEls.color.textContent = myPlayer.color.toUpperCase();
-    gameEls.color.style.color = myPlayer.color;
+    const colorAccent = playerColorSwatches[myPlayer.color] || '#f5f5dc';
+    gameEls.color.style.color = colorAccent;
+    gameEls.color.style.textShadow = myPlayer.color === 'red'
+        ? '0 0 12px rgba(255, 99, 99, 0.85)'
+        : '0 0 12px rgba(255, 235, 180, 0.7)';
     updateTurnIndicator(gameState);
 
     currentPlayers = players;
@@ -264,7 +273,11 @@ function updateMatchLobby(room) {
 function updateTurnIndicator(gameState) {
     if (!gameState) return;
     gameEls.turn.textContent = `${gameState.turn.toUpperCase()}'s Turn`;
-    gameEls.turn.style.color = gameState.turn === 'red' ? '#ef4444' : '#6b7280';
+    const turnColor = playerColorSwatches[gameState.turn] || '#f5f5dc';
+    gameEls.turn.style.color = turnColor;
+    gameEls.turn.style.textShadow = gameState.turn === 'red'
+        ? '0 0 14px rgba(255, 102, 102, 0.8)'
+        : '0 0 16px rgba(255, 225, 120, 0.65)';
 }
 
 function refreshPlayerLabels() {
@@ -304,7 +317,7 @@ function startGameScene(config) {
     if (game) game.destroy(true);
     const gameConfig = {
         type: Phaser.AUTO, width: 640, height: 640,
-        parent: 'game-container', backgroundColor: '#111827',
+        parent: 'game-container', backgroundColor: '#0b3d0b',
         scene: new CheckersScene(config)
     };
     game = new Phaser.Game(gameConfig);
@@ -342,9 +355,11 @@ class CheckersScene extends Phaser.Scene {
     }
 
     drawBoard() {
+        const lightSquareColor = 0xc9d6a3;
+        const darkSquareColor = 0x0a4f0a;
         for (let y = 0; y < this.BOARD_SIZE; y++) {
             for (let x = 0; x < this.BOARD_SIZE; x++) {
-                const color = (x + y) % 2 === 0 ? 0xeeeed2 : 0x769656; // Light and dark squares
+                const color = (x + y) % 2 === 0 ? lightSquareColor : darkSquareColor;
                 this.add.rectangle(x * this.CELL_SIZE, y * this.CELL_SIZE, this.CELL_SIZE, this.CELL_SIZE, color).setOrigin(0, 0);
             }
         }
@@ -365,12 +380,13 @@ class CheckersScene extends Phaser.Scene {
                 const pieceType = this.gameState.board[y][x];
                 if (pieceType !== 0) {
                     const isKing = pieceType === 3 || pieceType === 4;
-                    const pieceColor = ([1, 3].includes(pieceType)) ? 0xdc2626 : 0x1f2937; // Red or Black
-                    const strokeColor = ([1, 3].includes(pieceType)) ? 0xf87171 : 0x4b5563;
+                    const isRedPiece = [1, 3].includes(pieceType);
+                    const pieceColor = isRedPiece ? 0xc0392b : 0x1e1b1b;
+                    const strokeColor = isRedPiece ? 0xffa07a : 0xd4af37;
                     const pieceSprite = this.add.container(x * this.CELL_SIZE + this.CELL_SIZE / 2, y * this.CELL_SIZE + this.CELL_SIZE / 2);
                     const circle = this.add.circle(0, 0, this.CELL_SIZE / 2 - 8, pieceColor).setStrokeStyle(4, strokeColor);
                     pieceSprite.add(circle);
-                    if (isKing) pieceSprite.add(this.add.text(0, 0, '👑', { fontSize: '24px' }).setOrigin(0.5));
+                    if (isKing) pieceSprite.add(this.add.text(0, 0, '👑', { fontSize: '24px', color: '#ffe066' }).setOrigin(0.5));
                     pieceSprite.setData({ gridX: x, gridY: y });
                     this.pieceSprites.add(pieceSprite);
                 }
@@ -413,7 +429,7 @@ class CheckersScene extends Phaser.Scene {
             if (sprite) {
                 const circle = sprite.list[0];
                 this.selectedPiece = { x: gridX, y: gridY, sprite: sprite, originalStroke: circle.strokeColor };
-                circle.setStrokeStyle(6, 0xffff00); // Highlight with yellow
+                circle.setStrokeStyle(6, 0xffd700); // Highlight with gold
             }
         }
     }
