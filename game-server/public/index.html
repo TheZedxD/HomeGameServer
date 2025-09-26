@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Hub</title>
+    <!-- Link to the new theme file -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Main Container -->
+    <div class="container">
+        
+        <!-- Main Lobby Selection -->
+        <div id="main-lobby">
+            <h1>Game Hub</h1>
+            <p>A lightweight, local-first platform for classic games.</p>
+            
+            <div class="card">
+                <h2>Play Online (P2P)</h2>
+                <p>Enter a shared, secret room code to connect directly with a friend over the internet.</p>
+                <div style="display: flex; gap: 1rem;">
+                    <input type="text" id="online-room-code" placeholder="Enter Room Code..." class="input-field" style="flex-grow: 1;">
+                    <button id="join-online-btn" class="btn btn-success" style="width: auto;">Join</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Play on Local WiFi</h2>
+                <p>Create or join a game with others on the same network.</p>
+                <button id="show-create-game-modal-btn" class="btn btn-primary" style="margin-bottom: 2rem;">Create New LAN Game</button>
+                
+                <h2>Available LAN Games</h2>
+                <div id="room-list">
+                    <p class="text-gray-500">No open games found. Create one!</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Match Lobby (Staging Area) -->
+        <div id="match-lobby" class="hidden">
+            <h1 id="match-lobby-gametype">Game Lobby</h1>
+            <p>The game will begin when the host starts the match.</p>
+
+            <div class="card">
+                <div class="match-lobby-container">
+                    <div id="player1-card" class="player-card">
+                        <p class="player-name">Player 1 (Host)</p>
+                        <p id="player1-status" class="status not-ready">Not Ready</p>
+                    </div>
+                    <div id="player2-card" class="player-card">
+                        <p class="player-name">Waiting for Player...</p>
+                        <p id="player2-status" class="status not-ready">Not Ready</p>
+                    </div>
+                </div>
+                <div id="match-lobby-controls">
+                    <button id="ready-btn" class="btn btn-warning">Ready Up</button>
+                    <button id="start-game-btn" class="btn btn-primary hidden" disabled>Start Game</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Game UI -->
+        <div id="game-ui" class="hidden">
+            <div id="game-info-bar">
+                <div>
+                     <p>Mode: <b id="game-mode"></b></p>
+                     <p>Your Color: <b id="player-color"></b></p>
+                </div>
+                <h2 id="turn-indicator" style="margin: 0; border: none; padding: 0;"></h2>
+            </div>
+            <div id="game-container"></div>
+            <div id="game-over-message" class="modal-overlay hidden">
+                <div class="modal-content">
+                    <h1 id="winner-text"></h1>
+                    <button onclick="location.reload()" class="btn btn-primary">Back to Lobby</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Game Modal -->
+    <div id="create-game-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2>Create a New Game</h2>
+            <p>Choose a game to host on the local network.</p>
+            <div id="game-selection-list">
+                <!-- Game options will be dynamically inserted here by game.js -->
+            </div>
+            <button id="close-modal-btn" class="btn btn-secondary" style="margin-top: 1.5rem;">Cancel</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
