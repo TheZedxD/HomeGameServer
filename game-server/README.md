@@ -14,6 +14,7 @@ This project is a lightweight, self-hosted web server for playing classic multip
     ```
     npm install
     ```
+3.  **CachyOS users:** run `./install_cachyos.sh` to automatically install Node.js (if needed) and install the project dependencies.
 
 ## Running the Server
 
@@ -21,4 +22,9 @@ This project is a lightweight, self-hosted web server for playing classic multip
     ```
     npm start
     ```
+    - CachyOS users can alternatively run `./run_cachyos.sh` to verify dependencies and launch the server automatically.
 2.  The server will now be running. You can access the game hub by opening a web browser and going to `http://[SERVER-IP-ADDRESS]:8081`. You can find your server's local IP address in your network settings. If you are on the server machine itself, you can use `http://localhost:8081`.
+
+## Windows Shortcut
+
+- Windows users can double-click `run_windows.bat` to check for Node.js, install dependencies, and start the server automatically.
