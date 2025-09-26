@@ -45,6 +45,14 @@ const gameEls = {
     winnerText: document.getElementById('winner-text'),
 };
 
+const scoreboardEls = {
+    container: document.getElementById('scoreboard'),
+    text: document.getElementById('score-text'),
+};
+
+let currentPlayers = null;
+let playerLabels = { red: 'Red', black: 'Black' };
+
 // --- Available Games Data ---
 // This array makes it easy to add more games in the future.
 const availableGames = [
@@ -125,12 +133,20 @@ socket.on('gameStart', ({ gameState, players }) => {
     gameEls.color.textContent = myPlayer.color.toUpperCase();
     gameEls.color.style.color = myPlayer.color;
     updateTurnIndicator(gameState);
-    
+
+    currentPlayers = players;
+    refreshPlayerLabels();
+    if (scoreboardEls.container) {
+        scoreboardEls.container.classList.remove('hidden');
+    }
+    updateScoreboardDisplay(gameState.score || { red: 0, black: 0 });
+
     // Initialize the Phaser game scene with all necessary data.
     startGameScene({
         socket: socket,
         myColor: myPlayer.color,
         gameState: gameState,
+        roundMessage: `Round ${gameState.round || 1}`
     });
 });
 
@@ -139,11 +155,28 @@ socket.on('gameStateUpdate', (gameState) => {
     if (game && game.scene.isActive('CheckersScene')) {
         game.scene.getScene('CheckersScene').updateGameState(gameState);
     }
+    if (gameState.score) {
+        updateScoreboardDisplay(gameState.score);
+    }
     updateTurnIndicator(gameState);
     if (gameState.gameOver) {
-        gameEls.winnerText.textContent = `${gameState.winner.toUpperCase()} Wins!`;
+        const winnerLabel = gameState.winnerName || formatColorLabel(gameState.winner);
+        gameEls.winnerText.textContent = `${winnerLabel} Wins!`;
         gameEls.gameOverMessage.classList.remove('hidden');
     }
+});
+
+socket.on('roundEnd', ({ winnerColor, winnerName, redScore, blackScore }) => {
+    const announcement = `${winnerName || formatColorLabel(winnerColor)} wins the round!`;
+    if (game && game.scene.isActive('CheckersScene')) {
+        const scene = game.scene.getScene('CheckersScene');
+        if (scene && typeof scene.showAnnouncement === 'function') {
+            scene.showAnnouncement(announcement);
+        }
+    } else {
+        alert(announcement);
+    }
+    updateScoreboardDisplay({ red: redScore, black: blackScore });
 });
 
 // Handles generic errors sent from the server.
@@ -234,6 +267,38 @@ function updateTurnIndicator(gameState) {
     gameEls.turn.style.color = gameState.turn === 'red' ? '#ef4444' : '#6b7280';
 }
 
+function refreshPlayerLabels() {
+    if (!currentPlayers) {
+        playerLabels = { red: 'Red', black: 'Black' };
+        return;
+    }
+    const playerValues = Object.values(currentPlayers || {});
+    const redPlayer = playerValues.find(p => p.color === 'red');
+    const blackPlayer = playerValues.find(p => p.color === 'black');
+    playerLabels = {
+        red: derivePlayerLabel(redPlayer, 'Red'),
+        black: derivePlayerLabel(blackPlayer, 'Black')
+    };
+}
+
+function derivePlayerLabel(player, fallback) {
+    if (!player) return fallback;
+    return player.username || player.name || player.displayName || player.playerName || fallback;
+}
+
+function formatColorLabel(color) {
+    if (!color) return '';
+    return color.charAt(0).toUpperCase() + color.slice(1);
+}
+
+function updateScoreboardDisplay(score = { red: 0, black: 0 }) {
+    refreshPlayerLabels();
+    if (!scoreboardEls.text) return;
+    const redScore = score.red ?? 0;
+    const blackScore = score.black ?? 0;
+    scoreboardEls.text.textContent = `${playerLabels.red}: ${redScore} – ${playerLabels.black}: ${blackScore}`;
+}
+
 // Destroys any old game instance and creates a new one.
 function startGameScene(config) {
     if (game) game.destroy(true);
@@ -262,6 +327,7 @@ class CheckersScene extends Phaser.Scene {
         this.selectedPiece = null;
         this.BOARD_SIZE = 8;
         this.CELL_SIZE = 80;
+        this.pendingAnnouncement = config.roundMessage || null;
     }
 
     create() {
@@ -269,6 +335,10 @@ class CheckersScene extends Phaser.Scene {
         this.drawBoard();
         this.renderPieces(); // Render initial state
         this.input.on('pointerdown', this.handleBoardClick, this);
+        if (this.pendingAnnouncement) {
+            this.showAnnouncement(this.pendingAnnouncement);
+            this.pendingAnnouncement = null;
+        }
     }
 
     drawBoard() {
@@ -346,6 +416,25 @@ class CheckersScene extends Phaser.Scene {
                 circle.setStrokeStyle(6, 0xffff00); // Highlight with yellow
             }
         }
+    }
+
+    showAnnouncement(message) {
+        const centerX = this.cameras.main.width / 2;
+        const centerY = this.cameras.main.height / 2;
+        const announceText = this.add.text(centerX, centerY, message, {
+            fontSize: '48px',
+            color: '#ffffff',
+            fontStyle: 'bold',
+            align: 'center'
+        }).setOrigin(0.5);
+        announceText.setStroke('#000000', 8);
+        this.tweens.add({
+            targets: announceText,
+            alpha: 0,
+            duration: 1500,
+            delay: 1000,
+            onComplete: () => announceText.destroy()
+        });
     }
 }
 
