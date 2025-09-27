@@ -1,19 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")"
+export PORT="${PORT:-8081}"
 
-printf '=== HomeGameServer Runner ===\n'
+if ! command -v node >/dev/null 2>&1; then echo "node not found"; exit 1; fi
+if ! command -v npm  >/dev/null 2>&1; then echo "npm not found"; exit 1; fi
+if ! command -v python3 >/dev/null 2>&1; then echo "python3 not found"; exit 1; fi
 
-if ! command -v node >/dev/null 2>&1; then
-  printf 'ERROR: Node.js is not installed or not in PATH.\n'
-  printf 'Please run ./install_cachyos.sh first.\n'
-  exit 1
-fi
+echo "[*] Running sanity..."
+npm run sanity
 
-if [ ! -d node_modules ]; then
-  printf 'Dependencies not installed. Running npm install...\n'
-  npm install
-fi
-
-printf 'Starting the game server...\n'
-npm start
+echo "[*] Starting server on :$PORT"
+exec npm start

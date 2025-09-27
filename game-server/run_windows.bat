@@ -1,20 +1,21 @@
 @echo off
-cd /d "%~dp0"
-echo === HomeGameServer Setup ===
-echo Checking for Node.js and npm...
-npm -v >NUL 2>NUL
-IF %ERRORLEVEL% NEQ 0 (
-    echo ERROR: Node.js is not installed or not in PATH.
-    echo Please install Node.js from https://nodejs.org and try again.
-    pause
-    exit /B 1
+setlocal enabledelayedexpansion
+
+where node >nul 2>nul || (echo Node.js not found in PATH & pause & exit /b 1)
+where npm  >nul 2>nul || (echo npm not found in PATH & pause & exit /b 1)
+where python >nul 2>nul || (echo Python not found in PATH & pause & exit /b 1)
+
+if not exist node_modules (
+  echo [*] Installing deps with npm ci...
+  npm ci || (echo npm ci failed & pause & exit /b 1)
 )
-echo Installing dependencies...
-npm install
-IF %ERRORLEVEL% NEQ 0 (
-    echo Failed to install npm packages. Please check for errors.
-    pause
-    exit /B 1
-)
-echo Starting the game server...
+
+echo [*] Running sanity...
+npm run sanity
+if errorlevel 1 (echo Sanity failed & pause & exit /b 1)
+
+echo [*] Starting server on :%PORT%
 npm start
+if errorlevel 1 (echo Server exited with error & pause & exit /b 1)
+
+endlocal
