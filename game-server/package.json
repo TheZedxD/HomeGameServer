@@ -4,7 +4,8 @@
   "description": "A local multiplayer game server with themed UI",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "check:conflicts": "node scripts/check-conflict-markers.js"
   },
   "dependencies": {
     "express": "^4.18.2",
