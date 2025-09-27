@@ -135,9 +135,7 @@ io.on('connection', (socket) => {
             const winner = checkForWinner(room.gameState);
             if (winner) {
                 const winnerColor = winner;
-                const winnerSocketId = Object.keys(room.players).find(pid => room.players[pid].color === winnerColor);
-                const winnerPlayer = winnerSocketId ? room.players[winnerSocketId] : null;
-                const winnerName = winnerPlayer?.username || winnerPlayer?.name || winnerPlayer?.displayName || winnerColor;
+                const winnerName = winnerColor ? winnerColor.toUpperCase() : 'Unknown';
 
                 room.score[winnerColor] += 1;
                 room.gameState.score = { ...room.score };
