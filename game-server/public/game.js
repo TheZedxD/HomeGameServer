@@ -180,11 +180,9 @@ modalEls.closeModalBtn.addEventListener('click', () => ui.createGameModal.classL
 matchLobbyEls.readyBtn.addEventListener('click', () => socket.emit('playerReady'));
 matchLobbyEls.startGameBtn.addEventListener('click', () => socket.emit('startGame'));
 mainLobbyEls.joinOnlineBtn.addEventListener('click', () => {
-    const roomCode = mainLobbyEls.onlineRoomCodeInput.value.trim();
+    const roomCode = mainLobbyEls.onlineRoomCodeInput.value.trim().toUpperCase();
     if (roomCode) {
-        // We emit 'createGame' which will either create or join a P2P-designated room.
-        // The server logic handles finding if it exists already.
-        socket.emit('createGame', { gameType: 'Checkers', mode: 'p2p', roomCode });
+        socket.emit('joinGame', roomCode);
     } else {
         alert('Please enter a room code.');
     }
@@ -294,7 +292,17 @@ socket.on('roundEnd', ({ winnerColor, winnerName, redScore, blackScore }) => {
 });
 
 // Handles generic errors sent from the server.
-socket.on('error', (message) => alert(`Error: ${message}`));
+socket.on('error', (message) => {
+    if (typeof message === 'string' && message.includes('does not exist')) {
+        const roomCode = (mainLobbyEls.onlineRoomCodeInput.value || '').trim().toUpperCase();
+        if (roomCode) {
+            socket.emit('createGame', { gameType: 'Checkers', mode: 'p2p', roomCode });
+            return;
+        }
+    }
+
+    alert(`Error: ${message}`);
+});
 socket.on('playerLeft', (message) => alert(message));
 
 
