@@ -7,17 +7,21 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="profile-corner classic-raised">
-        <img src="/uploads/profiles/avatar.webp" alt="Profile" class="profile-avatar" onerror="this.src='/images/default-avatar.png'">
+    <div class="profile-corner classic-raised" id="profile-corner" role="region" aria-label="Player profile" tabindex="0">
+        <img id="profile-avatar" src="/images/default-avatar.svg" alt="Player avatar" class="profile-avatar">
         <div class="profile-stats">
-            <div class="profile-name">Guest</div>
-            <div class="profile-meta">Wins: 0 | Level: 1</div>
+            <div class="profile-name" id="profile-display-name">Guest</div>
+            <div class="profile-meta">Wins: <span id="profile-wins">0</span></div>
         </div>
-        <div class="profile-dropdown classic-raised">
-            <button class="profile-menu-item" type="button">View Profile</button>
-            <button class="profile-menu-item" type="button">Change Avatar</button>
-            <button class="profile-menu-item" type="button">Sign In</button>
+        <div class="profile-dropdown classic-raised" role="menu">
+            <button class="profile-menu-item" id="view-profile-btn" type="button" role="menuitem">View Profile</button>
+            <button class="profile-menu-item" id="change-avatar-btn" type="button" role="menuitem">Change Avatar</button>
+            <button class="profile-menu-item" id="sign-in-btn" type="button" role="menuitem">Sign In</button>
+            <button class="profile-menu-item hidden" id="sign-out-btn" type="button" role="menuitem">Sign Out</button>
         </div>
+        <form id="avatar-upload-form" class="hidden" enctype="multipart/form-data">
+            <input type="file" id="avatar-upload-input" name="avatar" accept="image/*">
+        </form>
     </div>
 
     <div class="app-container">
@@ -26,9 +30,9 @@
                 <div class="title-bar">
                     <span class="title-bar-text">Game Hub Control Center</span>
                     <div class="title-bar-controls">
-                        <span class="title-bar-btn" aria-label="Minimize">_</span>
-                        <span class="title-bar-btn" aria-label="Maximize">□</span>
-                        <span class="title-bar-btn" aria-label="Close">×</span>
+                        <button type="button" class="title-bar-btn" aria-label="Minimize">_</button>
+                        <button type="button" class="title-bar-btn" aria-label="Maximize">□</button>
+                        <button type="button" class="title-bar-btn" aria-label="Close">×</button>
                     </div>
                 </div>
                 <div class="window-body">
@@ -38,9 +42,9 @@
         </header>
 
         <main class="left-panels">
-            <section id="main-lobby" class="window">
+            <section id="main-lobby" class="window" aria-labelledby="main-lobby-title">
                 <div class="title-bar">
-                    <span class="title-bar-text">Player Setup &amp; Quick Actions</span>
+                    <span class="title-bar-text" id="main-lobby-title">Player Setup &amp; Quick Actions</span>
                 </div>
                 <div class="window-body">
                     <h1 class="app-title">Game Hub</h1>
@@ -48,90 +52,96 @@
 
                     <p id="name-greeting" class="name-greeting">Welcome, <span id="player-name-preview">Guest</span>!</p>
 
+                    <label for="displayNameInput" class="sr-only">Quick display name</label>
                     <div class="name-row">
-                        <input id="displayNameInput" class="input-field" placeholder="Your display name" maxlength="24">
-                        <button id="saveDisplayNameBtn" class="btn">Save Name</button>
+                        <input id="displayNameInput" class="input-field" placeholder="Your display name" maxlength="24" autocomplete="name">
+                        <button id="saveDisplayNameBtn" class="btn" type="button">Save Name</button>
                     </div>
 
-                    <div class="window-section classic-raised">
-                        <h2>Identity</h2>
+                    <div class="window-section classic-raised" aria-labelledby="identity-title">
+                        <h2 id="identity-title">Identity</h2>
                         <p>Choose the name that will appear in match lobbies and scoreboards.</p>
+                        <label for="player-name-input" class="sr-only">Display name</label>
                         <div class="name-input-row">
-                            <input type="text" id="player-name-input" class="input-field" placeholder="Enter your display name..." maxlength="24">
-                            <button id="save-name-btn" class="btn">Save Name</button>
+                            <input type="text" id="player-name-input" class="input-field" placeholder="Enter your display name..." maxlength="24" autocomplete="name">
+                            <button id="save-name-btn" class="btn" type="button">Save Name</button>
                         </div>
-                        <p id="name-status" class="name-status hidden"></p>
+                        <p id="name-status" class="name-status hidden" role="status"></p>
                     </div>
 
-                    <div class="window-section classic-raised">
-                        <h2>Play Online (P2P)</h2>
+                    <div class="window-section classic-raised" aria-labelledby="p2p-title">
+                        <h2 id="p2p-title">Play Online (P2P)</h2>
                         <p>Enter a shared, secret room code to connect directly with a friend over the internet.</p>
+                        <label for="online-room-code" class="sr-only">Room code</label>
                         <div class="input-row">
-                            <input type="text" id="online-room-code" placeholder="Enter Room Code..." class="input-field">
-                            <button id="join-online-btn" class="btn btn-primary">Join</button>
+                            <input type="text" id="online-room-code" placeholder="Enter Room Code..." class="input-field" autocomplete="off">
+                            <button id="join-online-btn" class="btn btn-primary" type="button">Join</button>
                         </div>
                     </div>
 
-                    <div class="window-section classic-raised">
-                        <h2>Play on Local WiFi</h2>
+                    <div class="window-section classic-raised" aria-labelledby="lan-title">
+                        <h2 id="lan-title">Play on Local WiFi</h2>
                         <p>Create or join a game with others on the same network.</p>
-                        <button id="show-create-game-modal-btn" class="btn btn-primary">Create New LAN Game</button>
+                        <button id="show-create-game-modal-btn" class="btn btn-primary" type="button">Create New LAN Game</button>
                     </div>
                 </div>
             </section>
 
-            <section id="match-lobby" class="window hidden">
+            <section id="match-lobby" class="window hidden" aria-labelledby="match-lobby-title">
                 <div class="title-bar">
-                    <span class="title-bar-text">Match Lobby</span>
+                    <span class="title-bar-text" id="match-lobby-title">Match Lobby</span>
                 </div>
                 <div class="window-body">
                     <h1 id="match-lobby-gametype" class="window-heading">Game Lobby</h1>
                     <p>The game will begin when the host starts the match.</p>
 
-                    <div class="match-lobby classic-sunken">
-                        <div class="player-card classic-raised" id="player1-card">
+                    <div class="match-lobby classic-sunken" role="list">
+                        <div class="player-card classic-raised" id="player1-card" role="listitem">
                             <p class="player-name">Player 1 (Host)</p>
                             <p id="player1-status" class="status not-ready">Not Ready</p>
                         </div>
-                        <div class="player-card classic-raised" id="player2-card">
+                        <div class="player-card classic-raised" id="player2-card" role="listitem">
                             <p class="player-name">Waiting for Player...</p>
                             <p id="player2-status" class="status not-ready">Not Ready</p>
                         </div>
                     </div>
                     <div class="match-controls">
-                        <button id="ready-btn" class="btn btn-warning">Ready Up</button>
-                        <button id="start-game-btn" class="btn btn-primary hidden" disabled>Start Game</button>
+                        <button id="ready-btn" class="btn btn-warning" type="button">Ready Up</button>
+                        <button id="start-game-btn" class="btn btn-primary hidden" type="button" disabled>Start Game</button>
                     </div>
                 </div>
             </section>
 
-            <section id="game-ui" class="window hidden">
+            <section id="game-ui" class="window hidden" aria-labelledby="game-session-title">
                 <div class="title-bar">
-                    <span class="title-bar-text">Game Session</span>
+                    <span class="title-bar-text" id="game-session-title">Game Session</span>
                 </div>
                 <div class="window-body">
-                    <div id="game-info-bar" class="classic-raised">
+                    <div id="game-info-bar" class="classic-raised" role="status">
                         <div>
                             <p>Mode: <b id="game-mode"></b></p>
                             <p>Your Color: <b id="player-color"></b></p>
                         </div>
                         <h2 id="turn-indicator"></h2>
                     </div>
-                    <div id="scoreboard" class="scoreboard classic-raised hidden">
+                    <div id="scoreboard" class="scoreboard classic-raised hidden" aria-live="polite">
                         <p id="score-text">Red: 0 – Black: 0</p>
                     </div>
-                    <div id="game-container" class="classic-sunken"></div>
-                    <div id="game-over-message" class="modal-overlay hidden">
+                    <div id="game-container" class="classic-sunken" role="application" aria-label="Game board"></div>
+                    <div class="match-controls" aria-label="Game actions">
+                        <button id="exit-to-menu-btn" class="btn" type="button">Exit to Menu</button>
+                    </div>
+                    <div id="game-over-message" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="winner-text">
                         <div class="modal-content classic-raised">
                             <h1 id="winner-text"></h1>
-                            <button onclick="location.reload()" class="btn btn-primary">Back to Lobby</button>
+                            <button id="game-over-exit-btn" class="btn btn-primary" type="button">Back to Lobby</button>
                         </div>
                     </div>
                 </div>
             </section>
         </main>
 
-        <aside class="lobby-list">
+        <aside class="lobby-list" aria-label="Available games">
             <div class="window" style="height: 100%;">
                 <div class="title-bar">
                     <span class="title-bar-text">Available LAN Games</span>
@@ -146,33 +156,50 @@
             </div>
         </aside>
 
-        <footer class="footer">
+        <footer class="footer" role="contentinfo">
             <div class="window">
                 <div class="title-bar">
                     <span class="title-bar-text">Server Status</span>
                 </div>
                 <div class="window-body status-body">
-                    <div class="status-indicator online">Online</div>
+                    <div class="status-indicator online" role="status">Online</div>
                     <div class="status-message">Local multiplayer services are running.</div>
                 </div>
             </div>
         </footer>
     </div>
 
-    <div id="create-game-modal" class="modal-overlay hidden">
+    <div id="create-game-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="create-game-title">
         <div class="modal-content classic-raised">
             <div class="title-bar">
-                <span class="title-bar-text">Create a New Game</span>
+                <span class="title-bar-text" id="create-game-title">Create a New Game</span>
             </div>
             <div class="modal-body">
                 <p>Choose a game to host on the local network.</p>
                 <div id="game-selection-list" class="selection-list"></div>
                 <div class="modal-actions">
-                    <button id="close-modal-btn" class="btn">Cancel</button>
+                    <button id="close-modal-btn" class="btn" type="button">Cancel</button>
                 </div>
             </div>
         </div>
     </div>
+
+    <div id="profile-prompt-modal" class="modal-overlay hidden prompt-modal" role="dialog" aria-modal="true" aria-labelledby="profile-prompt-title">
+        <div class="modal-content classic-raised">
+            <div class="title-bar">
+                <span class="title-bar-text" id="profile-prompt-title">Complete Your Profile</span>
+            </div>
+            <div class="modal-body">
+                <p id="profile-prompt-message">It looks like your profile is missing a display name or avatar. Update your profile to unlock the full experience.</p>
+                <div class="modal-actions">
+                    <button id="prompt-edit-profile-btn" class="btn btn-primary" type="button">Edit Profile</button>
+                    <button id="prompt-dismiss-btn" class="btn" type="button">Maybe Later</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="false"></div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>

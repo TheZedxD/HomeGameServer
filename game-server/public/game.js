@@ -60,12 +60,42 @@ const scoreboardEls = {
     text: document.getElementById('score-text'),
 };
 
+const profileEls = {
+    corner: document.getElementById('profile-corner'),
+    avatar: document.getElementById('profile-avatar'),
+    displayName: document.getElementById('profile-display-name'),
+    wins: document.getElementById('profile-wins'),
+    signInBtn: document.getElementById('sign-in-btn'),
+    signOutBtn: document.getElementById('sign-out-btn'),
+    changeAvatarBtn: document.getElementById('change-avatar-btn'),
+    viewProfileBtn: document.getElementById('view-profile-btn'),
+    avatarInput: document.getElementById('avatar-upload-input'),
+    avatarForm: document.getElementById('avatar-upload-form'),
+};
+
+const promptEls = {
+    modal: document.getElementById('profile-prompt-modal'),
+    editBtn: document.getElementById('prompt-edit-profile-btn'),
+    dismissBtn: document.getElementById('prompt-dismiss-btn'),
+};
+
+const toastContainer = document.getElementById('toast-container');
+const lobbyListEl = document.querySelector('aside.lobby-list');
+const exitToMenuBtn = document.getElementById('exit-to-menu-btn');
+const gameOverExitBtn = document.getElementById('game-over-exit-btn');
+
 const NAME_STORAGE_KEY = 'homegame.displayName';
+const AVATAR_STORAGE_KEY = 'homegame.avatarPath';
+const INSTALL_FLAG_KEY = 'homegame.installFlag';
+const PROFILE_PROMPT_DISMISSED_KEY = 'homegame.profilePromptDismissed';
+const DEFAULT_AVATAR_PATH = '/images/default-avatar.svg';
 const DEFAULT_GUEST_NAME = 'Guest';
+
 let myDisplayName = '';
 let currentPlayers = null;
 let playerLabels = { red: 'Red', black: 'Black' };
 let latestScore = { red: 0, black: 0 };
+let sessionProfile = null;
 
 // --- Available Games Data ---
 // This array makes it easy to add more games in the future.
@@ -80,12 +110,26 @@ const playerColorSwatches = {
 };
 
 initializeIdentity();
+setupProfileEvents();
+const storedAvatarPath = readLocalAvatarPath();
+if (storedAvatarPath) {
+    setAvatar(storedAvatarPath);
+}
+initializeServiceWorker();
+bootstrapProfile();
 
 // --- UI State Management ---
 // A simple function to switch between the main UI views.
 function showUI(activeUI) {
-    Object.values(ui).forEach(el => el.classList.add('hidden'));
+    Object.values(ui).forEach(el => el?.classList.add('hidden'));
     if (activeUI) activeUI.classList.remove('hidden');
+    if (lobbyListEl) {
+        const shouldShowLobby = activeUI === ui.mainLobby;
+        lobbyListEl.classList.toggle('hidden', !shouldShowLobby);
+    }
+    if (activeUI !== ui.gameUI && gameEls.gameOverMessage) {
+        gameEls.gameOverMessage.classList.add('hidden');
+    }
 }
 
 function initializeIdentity() {
@@ -144,7 +188,7 @@ function saveAndEmitDisplayName() {
     applyDisplayName(raw, { showStatus: false });
 }
 
-function applyDisplayName(rawValue, { showStatus = true } = {}) {
+function applyDisplayName(rawValue, { showStatus = true, persist = true } = {}) {
     const sanitized = sanitizeName(rawValue).slice(0, 24);
     if (!sanitized) {
         if (showStatus) {
@@ -162,9 +206,21 @@ function applyDisplayName(rawValue, { showStatus = true } = {}) {
     }
     updateNamePreview(sanitized);
     storeDisplayName(sanitized);
+    if (persist) {
+        persistDisplayNameToServer(sanitized);
+    }
+    if (sessionProfile) {
+        sessionProfile.displayName = sanitized;
+    }
 
     if (socket.connected) {
         socket.emit('setUsername', sanitized);
+        if (sessionProfile) {
+            socket.emit('linkAccount', {
+                accountName: sessionProfile.username,
+                displayName: sanitized
+            });
+        }
     }
 
     if (currentPlayers && myPlayerId && currentPlayers[myPlayerId]) {
@@ -209,6 +265,17 @@ function storeDisplayName(name) {
     }
 }
 
+function persistDisplayNameToServer(name) {
+    if (!name) return;
+    fetch('/api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName: name })
+    }).catch((error) => {
+        console.warn('Unable to persist display name to profile.', error);
+    });
+}
+
 function readStoredName() {
     try {
         const preferred = localStorage.getItem('displayName');
@@ -216,6 +283,278 @@ function readStoredName() {
         return localStorage.getItem(NAME_STORAGE_KEY) || '';
     } catch (error) {
         return '';
+    }
+}
+
+function setupProfileEvents() {
+    profileEls.avatar?.addEventListener('error', () => {
+        profileEls.avatar.src = DEFAULT_AVATAR_PATH;
+    });
+    profileEls.signInBtn?.addEventListener('click', () => {
+        window.location.href = '/login';
+    });
+    profileEls.signOutBtn?.addEventListener('click', async () => {
+        try {
+            await fetch('/logout', { method: 'POST' });
+        } catch (error) {
+            console.warn('Failed to log out gracefully.', error);
+        }
+        window.location.href = '/login';
+    });
+    profileEls.changeAvatarBtn?.addEventListener('click', () => {
+        profileEls.avatarInput?.click();
+    });
+    profileEls.avatarInput?.addEventListener('change', handleAvatarSelection);
+    profileEls.viewProfileBtn?.addEventListener('click', () => {
+        hideProfilePrompt(false);
+        showUI(ui.mainLobby);
+        identityEls.input?.focus();
+    });
+    promptEls.editBtn?.addEventListener('click', () => {
+        hideProfilePrompt(false);
+        showUI(ui.mainLobby);
+        identityEls.input?.focus();
+    });
+    promptEls.dismissBtn?.addEventListener('click', () => hideProfilePrompt(true));
+    exitToMenuBtn?.addEventListener('click', leaveGame);
+    gameOverExitBtn?.addEventListener('click', () => {
+        leaveGame();
+        gameEls.gameOverMessage?.classList.add('hidden');
+    });
+}
+
+function initializeServiceWorker() {
+    if (!('serviceWorker' in navigator)) {
+        return;
+    }
+
+    navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data?.type === 'SERVICE_WORKER_READY') {
+            handleServiceWorkerReady();
+        }
+    });
+
+    window.addEventListener('load', () => {
+        navigator.serviceWorker
+            .register('/service-worker.js')
+            .catch((error) => console.warn('Service worker registration failed.', error));
+    });
+}
+
+async function handleServiceWorkerReady() {
+    const installFlag = getLocalStorageItem(INSTALL_FLAG_KEY);
+    if (!installFlag) {
+        try {
+            const cacheNames = await caches.keys();
+            await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)));
+        } catch (error) {
+            console.warn('Unable to clear caches during initial install.', error);
+        }
+        try {
+            localStorage.clear();
+        } catch (error) {
+            console.warn('Unable to clear localStorage during initial install.', error);
+        }
+    }
+    setLocalStorageItem(INSTALL_FLAG_KEY, 'true');
+}
+
+function bootstrapProfile() {
+    loadSessionProfile();
+}
+
+async function loadSessionProfile() {
+    try {
+        const response = await fetch('/api/session', { headers: { 'Accept': 'application/json' } });
+        if (!response.ok) {
+            throw new Error('Unable to load profile.');
+        }
+        const data = await response.json();
+        if (!data.authenticated) {
+            handleUnauthenticated();
+            return;
+        }
+
+        sessionProfile = data.user;
+        updateProfileUI(sessionProfile);
+        toggleProfileActions({ authenticated: true });
+        socket.emit('linkAccount', {
+            accountName: sessionProfile.username,
+            displayName: sessionProfile.displayName
+        });
+        applyDisplayName(sessionProfile.displayName, { showStatus: false, persist: false });
+        maybeShowProfilePrompt(sessionProfile);
+    } catch (error) {
+        console.warn('Failed to load session profile.', error);
+        handleUnauthenticated();
+    }
+}
+
+function handleUnauthenticated() {
+    toggleProfileActions({ authenticated: false });
+    updateProfileUI({ username: DEFAULT_GUEST_NAME, displayName: DEFAULT_GUEST_NAME, wins: 0, avatarPath: null });
+}
+
+function toggleProfileActions({ authenticated }) {
+    if (!profileEls.signInBtn || !profileEls.signOutBtn) return;
+    if (authenticated) {
+        profileEls.signInBtn.classList.add('hidden');
+        profileEls.signOutBtn.classList.remove('hidden');
+    } else {
+        profileEls.signInBtn.classList.remove('hidden');
+        profileEls.signOutBtn.classList.add('hidden');
+    }
+}
+
+function updateProfileUI(profile) {
+    if (!profile) return;
+    const resolvedName = sanitizeName(profile.displayName || profile.username || DEFAULT_GUEST_NAME) || DEFAULT_GUEST_NAME;
+    myDisplayName = resolvedName;
+    if (profileEls.displayName) {
+        profileEls.displayName.textContent = resolvedName;
+    }
+    if (identityEls.input) {
+        identityEls.input.value = resolvedName;
+    }
+    if (displayNameInput) {
+        displayNameInput.value = resolvedName;
+    }
+    updateNamePreview(resolvedName);
+    storeDisplayName(resolvedName);
+
+    const winsValue = Number(profile.wins) || 0;
+    if (profileEls.wins) {
+        profileEls.wins.textContent = winsValue;
+    }
+
+    const storedAvatar = readLocalAvatarPath();
+    const avatarPath = storedAvatar || profile.avatarPath || DEFAULT_AVATAR_PATH;
+    setAvatar(avatarPath);
+    if (profile.avatarPath) {
+        persistLocalAvatarPath(profile.avatarPath);
+    }
+}
+
+function setAvatar(path, { bustCache = false } = {}) {
+    if (!profileEls.avatar) return;
+    const finalPath = path || DEFAULT_AVATAR_PATH;
+    if (bustCache && typeof finalPath === 'string' && !finalPath.startsWith('data:')) {
+        const url = new URL(finalPath, window.location.origin);
+        url.searchParams.set('v', Date.now().toString());
+        profileEls.avatar.src = url.pathname + url.search;
+        return;
+    }
+    profileEls.avatar.src = finalPath;
+}
+
+function persistLocalAvatarPath(path) {
+    if (!path) return;
+    setLocalStorageItem(AVATAR_STORAGE_KEY, path);
+}
+
+function readLocalAvatarPath() {
+    return getLocalStorageItem(AVATAR_STORAGE_KEY);
+}
+
+function hideProfilePrompt(remember = false) {
+    if (!promptEls.modal) return;
+    promptEls.modal.classList.add('hidden');
+    if (remember) {
+        setLocalStorageItem(PROFILE_PROMPT_DISMISSED_KEY, 'true');
+    }
+}
+
+function maybeShowProfilePrompt(profile) {
+    if (!promptEls.modal) return;
+    const dismissed = getLocalStorageItem(PROFILE_PROMPT_DISMISSED_KEY) === 'true';
+    if (dismissed) return;
+    const cleanedName = sanitizeName(profile?.displayName || '');
+    const missingName = !cleanedName || cleanedName.toLowerCase() === DEFAULT_GUEST_NAME.toLowerCase();
+    const missingAvatar = !profile?.avatarPath && !readLocalAvatarPath();
+    if (missingName || missingAvatar) {
+        promptEls.modal.classList.remove('hidden');
+    }
+}
+
+function handleAvatarSelection(event) {
+    const file = event.target?.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+        showToast('Avatar must be smaller than 2MB.', 'error');
+        profileEls.avatarForm?.reset();
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('avatar', file);
+
+    fetch('/api/profile/avatar', {
+        method: 'POST',
+        body: formData
+    })
+        .then(async (response) => {
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(errorText || 'Upload failed');
+            }
+            return response.json();
+        })
+        .then((data) => {
+            if (!data?.avatarPath) {
+                throw new Error('Upload did not return an avatar path.');
+            }
+            setAvatar(data.avatarPath, { bustCache: true });
+            persistLocalAvatarPath(data.avatarPath);
+            showToast('Avatar updated successfully.', 'success');
+            hideProfilePrompt(true);
+            if (sessionProfile) {
+                sessionProfile.avatarPath = data.avatarPath;
+            }
+        })
+        .catch((error) => {
+            console.error('Avatar upload failed.', error);
+            showToast('Unable to upload avatar. Please try another image.', 'error');
+        })
+        .finally(() => {
+            profileEls.avatarForm?.reset();
+        });
+}
+
+function getLocalStorageItem(key) {
+    try {
+        return localStorage.getItem(key);
+    } catch (error) {
+        return null;
+    }
+}
+
+function setLocalStorageItem(key, value) {
+    try {
+        localStorage.setItem(key, value);
+    } catch (error) {
+        console.warn('Unable to persist localStorage value.', error);
+    }
+}
+
+function showToast(message, variant = 'info', options = {}) {
+    if (!toastContainer) return;
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${variant}`;
+    toast.setAttribute('role', 'alert');
+    toast.textContent = message;
+    toastContainer.appendChild(toast);
+
+    const duration = typeof options.duration === 'number' ? options.duration : 4000;
+    if (duration !== Infinity) {
+        const timeout = setTimeout(() => {
+            toast.remove();
+        }, Math.max(1000, duration));
+        toast.addEventListener('click', () => {
+            clearTimeout(timeout);
+            toast.remove();
+        });
+    } else {
+        toast.addEventListener('click', () => toast.remove());
     }
 }
 
@@ -228,7 +567,7 @@ matchLobbyEls.startGameBtn.addEventListener('click', () => socket.emit('startGam
 mainLobbyEls.joinOnlineBtn.addEventListener('click', () => {
     const roomCode = mainLobbyEls.onlineRoomCodeInput.value.trim().toUpperCase();
     if (!roomCode) {
-        alert('Enter a room code');
+        showToast('Enter a room code before joining.', 'error');
         return;
     }
 
@@ -252,6 +591,12 @@ socket.on('connect', () => {
         }
         updateNamePreview(stored);
         socket.emit('setUsername', stored);
+    }
+    if (sessionProfile) {
+        socket.emit('linkAccount', {
+            accountName: sessionProfile.username,
+            displayName: sessionProfile.displayName || stored
+        });
     }
 });
 
@@ -280,6 +625,9 @@ socket.on('updateRoomList', (openRooms) => {
 socket.on('joinedMatchLobby', ({ room, yourId }) => {
     myPlayerId = yourId;
     updateMatchLobby(room);
+    if (scoreboardEls.container) {
+        scoreboardEls.container.classList.add('hidden');
+    }
     showUI(ui.matchLobby);
 });
 
@@ -331,6 +679,7 @@ socket.on('gameStateUpdate', (gameState) => {
         const winnerLabel = gameState.winnerName || formatColorLabel(gameState.winner);
         gameEls.winnerText.textContent = `${winnerLabel} Wins!`;
         gameEls.gameOverMessage.classList.remove('hidden');
+        loadSessionProfile();
     }
 });
 
@@ -342,7 +691,7 @@ socket.on('roundEnd', ({ winnerColor, winnerName, redScore, blackScore }) => {
             scene.showAnnouncement(announcement);
         }
     } else {
-        alert(announcement);
+        showToast(announcement, 'info');
     }
     updateScoreboardDisplay({ red: redScore, black: blackScore });
 });
@@ -357,9 +706,10 @@ socket.on('error', (message) => {
         }
     }
 
-    alert(message);
+    showToast(message, 'error');
 });
-socket.on('playerLeft', (message) => alert(message));
+socket.on('playerLeft', (message) => showToast(message, 'info'));
+socket.on('illegalMove', (message) => showToast(message, 'error'));
 
 
 // --- Helper Functions ---
@@ -499,6 +849,27 @@ function updateScoreboardDisplay(score = { red: 0, black: 0 }) {
     scoreboardEls.text.textContent = `${playerLabels.red}: ${redScore} – ${playerLabels.black}: ${blackScore}`;
 }
 
+function leaveGame() {
+    if (socket && socket.connected) {
+        socket.emit('leaveGame');
+    }
+    if (game) {
+        game.destroy(true);
+        game = null;
+    }
+    currentPlayers = null;
+    playerLabels = { red: 'Red', black: 'Black' };
+    latestScore = { red: 0, black: 0 };
+    if (scoreboardEls.container) {
+        scoreboardEls.container.classList.add('hidden');
+    }
+    if (gameEls.gameOverMessage) {
+        gameEls.gameOverMessage.classList.add('hidden');
+    }
+    showUI(ui.mainLobby);
+    showToast('Returned to the main lobby.', 'info');
+}
+
 // Destroys any old game instance and creates a new one.
 function startGameScene(config) {
     if (game) game.destroy(true);
@@ -513,6 +884,7 @@ function startGameScene(config) {
 // --- App Initialization ---
 populateGameSelection();
 showUI(ui.mainLobby);
+window.joinGame = joinGame;
 
 
 // --- Phaser Scene for Checkers ---
