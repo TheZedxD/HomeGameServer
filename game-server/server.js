@@ -33,31 +33,60 @@ io.on('connection', (socket) => {
     });
 
     // --- Lobby Management ---
-    socket.on('createGame', ({ gameType, mode, roomCode }) => {
-        const roomId = mode === 'p2p' ? roomCode : `room_${Math.random().toString(36).substr(2, 5)}`;
-        
+    socket.on('createGame', ({ gameType = 'Checkers', mode = 'lan', roomCode }) => {
+        const normalizedMode = mode || 'lan';
+        const normalizedGameType = gameType || 'Checkers';
+        const roomId = normalizedMode === 'p2p' && roomCode
+            ? String(roomCode).toUpperCase()
+            : `room_${Math.random().toString(36).substr(2, 5)}`;
+
+        if (normalizedMode === 'p2p' && rooms[roomId]) {
+            const room = rooms[roomId];
+            if (Object.keys(room.players).length >= room.maxPlayers) {
+                return socket.emit('error', 'Room is full.');
+            }
+            return joinRoom(socket, roomId);
+        }
+
         rooms[roomId] = {
             roomId,
             hostId: socket.id,
-            gameType,
-            mode,
-            maxPlayers: 2, // Hardcoded for now
+            gameType: normalizedGameType,
+            mode: normalizedMode,
+            maxPlayers: MAX_PLAYERS_PER_ROOM,
             players: {},
             gameState: null,
             score: { red: 0, black: 0 },
             round: 1
         };
-        
-        console.log(`[${mode.toUpperCase()}] Room created: ${roomId} for ${gameType}`);
+
+        console.log(`[${normalizedMode.toUpperCase()}] Room created: ${roomId} for ${normalizedGameType}`);
         joinRoom(socket, roomId);
     });
 
-    socket.on('joinGame', (roomId) => {
-        if (rooms[roomId] && Object.keys(rooms[roomId].players).length < rooms[roomId].maxPlayers) {
-            joinRoom(socket, roomId);
-        } else {
-            socket.emit('error', 'Room is full or does not exist.');
+    socket.on('joinGame', (roomIdRaw) => {
+        const raw = roomIdRaw ? String(roomIdRaw).trim() : '';
+        if (!raw) {
+            return socket.emit('error', 'Room does not exist.');
         }
+
+        let roomId = raw;
+        let room = rooms[roomId];
+
+        if (!room) {
+            roomId = raw.toUpperCase();
+            room = rooms[roomId];
+        }
+
+        if (!room) {
+            return socket.emit('error', `Room ${raw.toUpperCase()} does not exist.`);
+        }
+
+        if (Object.keys(room.players).length >= room.maxPlayers) {
+            return socket.emit('error', 'Room is full.');
+        }
+
+        joinRoom(socket, roomId);
     });
 
     // --- Match Lobby (Staging Area) Logic ---
