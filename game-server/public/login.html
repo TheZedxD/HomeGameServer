@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Hub Login</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body class="auth-body">
+    <main class="auth-window window classic-raised">
+        <div class="title-bar">
+            <span class="title-bar-text">Sign In</span>
+        </div>
+        <form class="window-body auth-form" action="/login" method="POST" aria-labelledby="login-title">
+            <h1 id="login-title" class="auth-title">Welcome Back</h1>
+            <p class="auth-subtitle">Sign in with your Game Hub account to access the lobby.</p>
+
+            <label for="login-username" class="input-label">Username</label>
+            <input id="login-username" name="username" class="input-field" type="text" autocomplete="username" required maxlength="24">
+
+            <label for="login-password" class="input-label">Password</label>
+            <input id="login-password" name="password" class="input-field" type="password" autocomplete="current-password" required minlength="6">
+
+            <div class="auth-actions">
+                <button type="submit" class="btn btn-primary">Login</button>
+                <a href="/signup" class="btn" role="button">Create Account</a>
+            </div>
+        </form>
+    </main>
+</body>
+</html>

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create a Game Hub Account</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body class="auth-body">
+    <main class="auth-window window classic-raised">
+        <div class="title-bar">
+            <span class="title-bar-text">Create Account</span>
+        </div>
+        <form class="window-body auth-form" action="/signup" method="POST" aria-labelledby="signup-title">
+            <h1 id="signup-title" class="auth-title">Join the Game Hub</h1>
+            <p class="auth-subtitle">Create your profile to start playing and tracking your wins.</p>
+
+            <label for="signup-username" class="input-label">Username</label>
+            <input id="signup-username" name="username" class="input-field" type="text" autocomplete="username" required maxlength="24" aria-describedby="username-help">
+            <small id="username-help" class="help-text">Letters, numbers, hyphens, and underscores only.</small>
+
+            <label for="signup-display-name" class="input-label">Display Name</label>
+            <input id="signup-display-name" name="displayName" class="input-field" type="text" maxlength="24" placeholder="Shown to other players">
+
+            <label for="signup-password" class="input-label">Password</label>
+            <input id="signup-password" name="password" class="input-field" type="password" autocomplete="new-password" required minlength="6">
+
+            <div class="auth-actions">
+                <button type="submit" class="btn btn-primary">Sign Up</button>
+                <a href="/login" class="btn" role="button">Back to Login</a>
+            </div>
+        </form>
+    </main>
+</body>
+</html>
