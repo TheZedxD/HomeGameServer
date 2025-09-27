@@ -181,11 +181,12 @@ matchLobbyEls.readyBtn.addEventListener('click', () => socket.emit('playerReady'
 matchLobbyEls.startGameBtn.addEventListener('click', () => socket.emit('startGame'));
 mainLobbyEls.joinOnlineBtn.addEventListener('click', () => {
     const roomCode = mainLobbyEls.onlineRoomCodeInput.value.trim().toUpperCase();
-    if (roomCode) {
-        socket.emit('joinGame', roomCode);
-    } else {
-        alert('Please enter a room code.');
+    if (!roomCode) {
+        alert('Enter a room code');
+        return;
     }
+
+    socket.emit('joinGame', roomCode);
 });
 
 
@@ -301,7 +302,7 @@ socket.on('error', (message) => {
         }
     }
 
-    alert(`Error: ${message}`);
+    alert(message);
 });
 socket.on('playerLeft', (message) => alert(message));
 
