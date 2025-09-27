@@ -88,7 +88,14 @@ const NAME_STORAGE_KEY = 'homegame.displayName';
 const AVATAR_STORAGE_KEY = 'homegame.avatarPath';
 const INSTALL_FLAG_KEY = 'homegame.installFlag';
 const PROFILE_PROMPT_DISMISSED_KEY = 'homegame.profilePromptDismissed';
-const DEFAULT_AVATAR_PATH = '/images/default-avatar.svg';
+const DEFAULT_AVATAR_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <rect width="96" height="96" fill="#1c4a8c" />
+  <circle cx="48" cy="34" r="20" fill="#ffffff" />
+  <path d="M16 84c0-17.673 14.327-32 32-32s32 14.327 32 32" fill="#ffffff" opacity="0.85" />
+</svg>
+`.trim();
+const DEFAULT_AVATAR_PATH = `data:image/svg+xml;utf8,${encodeURIComponent(DEFAULT_AVATAR_SVG)}`;
 const DEFAULT_GUEST_NAME = 'Guest';
 
 let myDisplayName = '';

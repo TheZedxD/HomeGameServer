@@ -5,8 +5,7 @@ const ASSETS_TO_CACHE = [
   '/login.html',
   '/signup.html',
   '/style.css',
-  '/game.js',
-  '/images/default-avatar.svg'
+  '/game.js'
 ];
 
 self.addEventListener('install', (event) => {

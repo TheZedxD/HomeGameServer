@@ -1,1 +1,1 @@
-Place your default avatar image in this directory and name it "default-avatar.png".
+Default avatars are now generated inline; no image asset is required in this directory.
