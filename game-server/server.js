@@ -18,8 +18,19 @@ const MAX_PLAYERS_PER_ROOM = 2;
 
 io.on('connection', (socket) => {
     console.log(`A user connected: ${socket.id}`);
-    players[socket.id] = { playerId: socket.id, inRoom: null };
+    players[socket.id] = { playerId: socket.id, inRoom: null, username: null };
     socket.emit('updateRoomList', getOpenRooms());
+
+    socket.on('setUsername', (rawName) => {
+        if (!players[socket.id]) return;
+        const sanitized = sanitizeUsername(rawName);
+        players[socket.id].username = sanitized;
+        const roomId = players[socket.id].inRoom;
+        if (roomId && rooms[roomId] && rooms[roomId].players[socket.id]) {
+            rooms[roomId].players[socket.id].username = sanitized;
+            io.to(roomId).emit('roomStateUpdate', rooms[roomId]);
+        }
+    });
 
     // --- Lobby Management ---
     socket.on('createGame', ({ gameType, mode, roomCode }) => {
@@ -172,7 +183,8 @@ function joinRoom(socket, roomId) {
     player.inRoom = roomId;
     room.players[socket.id] = {
         playerId: socket.id,
-        isReady: false
+        isReady: false,
+        username: players[socket.id]?.username || null
     };
     
     socket.join(roomId);
@@ -198,6 +210,13 @@ function getOpenRooms() {
         }
     }
     return openRooms;
+}
+
+function sanitizeUsername(rawName) {
+    if (rawName === null || rawName === undefined) return null;
+    const cleaned = String(rawName).replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!cleaned) return null;
+    return cleaned.slice(0, 24);
 }
 
 // --- Checkers Game State and Rules Engine (Unchanged) ---

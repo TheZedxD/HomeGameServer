@@ -2,6 +2,13 @@
 
 This project is a lightweight, self-hosted web server for playing classic multiplayer games over a local network or via P2P.
 
+## Features
+
+- 🎮 Two-player Checkers matches that play as a best-of-three series with automatic round resets.
+- 🧑‍🤝‍🧑 Personalized player display names that sync to match lobbies and scoreboards on every client.
+- 📊 Live score tracking that updates in real time after every round, including the final match banner.
+- 🖥️ Responsive lobby UI that highlights player readiness and host controls for starting a game.
+
 ## Setup
 
 1.  **Node.js:** Ensure you have Node.js installed on the machine that will act as the server.
