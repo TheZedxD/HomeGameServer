@@ -1,114 +1,176 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Game Hub</title>
-    <!-- Link to the new theme file -->
+    <title>Game Hub - Windows 2000 Edition</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-    <!-- Main Container -->
-    <div class="container">
-        
-        <!-- Main Lobby Selection -->
-        <div id="main-lobby">
-            <h1>Game Hub</h1>
-            <p>A lightweight, local-first platform for classic games.</p>
-
-            <p id="name-greeting" class="name-greeting">Welcome, <span id="player-name-preview">Guest</span>!</p>
-
-            <div class="name-row">
-                <input id="displayNameInput" placeholder="Your display name" maxlength="24">
-                <button id="saveDisplayNameBtn" class="btn btn-secondary">Save Name</button>
-            </div>
-
-            <div class="card identity-card">
-                <h2>Set Your Name</h2>
-                <p>Choose the name that will appear in match lobbies and scoreboards.</p>
-                <div class="name-input-row">
-                    <input type="text" id="player-name-input" class="input-field" placeholder="Enter your display name..." maxlength="24">
-                    <button id="save-name-btn" class="btn btn-secondary name-save-btn">Save Name</button>
-                </div>
-                <p id="name-status" class="name-status hidden"></p>
-            </div>
-
-            <div class="card">
-                <h2>Play Online (P2P)</h2>
-                <p>Enter a shared, secret room code to connect directly with a friend over the internet.</p>
-                <div style="display: flex; gap: 1rem;">
-                    <input type="text" id="online-room-code" placeholder="Enter Room Code..." class="input-field" style="flex-grow: 1;">
-                    <button id="join-online-btn" class="btn btn-primary" style="width: auto;">Join</button>
-                </div>
-            </div>
-
-            <div class="card">
-                <h2>Play on Local WiFi</h2>
-                <p>Create or join a game with others on the same network.</p>
-                <button id="show-create-game-modal-btn" class="btn btn-primary" style="margin-bottom: 2rem;">Create New LAN Game</button>
-                
-                <h2>Available LAN Games</h2>
-                <div id="room-list">
-                    <p class="text-gray-500">No open games found. Create one!</p>
-                </div>
-            </div>
+    <div class="profile-corner classic-raised">
+        <img src="/uploads/profiles/avatar.webp" alt="Profile" class="profile-avatar" onerror="this.src='/images/default-avatar.png'">
+        <div class="profile-stats">
+            <div class="profile-name">Guest</div>
+            <div class="profile-meta">Wins: 0 | Level: 1</div>
         </div>
-        
-        <!-- Match Lobby (Staging Area) -->
-        <div id="match-lobby" class="hidden">
-            <h1 id="match-lobby-gametype">Game Lobby</h1>
-            <p>The game will begin when the host starts the match.</p>
-
-            <div class="card">
-                <div class="match-lobby-container">
-                    <div id="player1-card" class="player-card">
-                        <p class="player-name">Player 1 (Host)</p>
-                        <p id="player1-status" class="status not-ready">Not Ready</p>
-                    </div>
-                    <div id="player2-card" class="player-card">
-                        <p class="player-name">Waiting for Player...</p>
-                        <p id="player2-status" class="status not-ready">Not Ready</p>
-                    </div>
-                </div>
-                <div id="match-lobby-controls">
-                    <button id="ready-btn" class="btn btn-warning">Ready Up</button>
-                    <button id="start-game-btn" class="btn btn-primary hidden" disabled>Start Game</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Main Game UI -->
-        <div id="game-ui" class="hidden">
-            <div id="game-info-bar">
-                <div>
-                     <p>Mode: <b id="game-mode"></b></p>
-                     <p>Your Color: <b id="player-color"></b></p>
-                </div>
-                <h2 id="turn-indicator" style="margin: 0; border: none; padding: 0;"></h2>
-            </div>
-            <div id="scoreboard" class="scoreboard hidden">
-                <p id="score-text">Red: 0 – Black: 0</p>
-            </div>
-            <div id="game-container"></div>
-            <div id="game-over-message" class="modal-overlay hidden">
-                <div class="modal-content">
-                    <h1 id="winner-text"></h1>
-                    <button onclick="location.reload()" class="btn btn-primary">Back to Lobby</button>
-                </div>
-            </div>
+        <div class="profile-dropdown classic-raised">
+            <button class="profile-menu-item" type="button">View Profile</button>
+            <button class="profile-menu-item" type="button">Change Avatar</button>
+            <button class="profile-menu-item" type="button">Sign In</button>
         </div>
     </div>
 
-    <!-- Create Game Modal -->
-    <div id="create-game-modal" class="modal-overlay hidden">
-        <div class="modal-content">
-            <h2>Create a New Game</h2>
-            <p>Choose a game to host on the local network.</p>
-            <div id="game-selection-list">
-                <!-- Game options will be dynamically inserted here by game.js -->
+    <div class="app-container">
+        <header class="header">
+            <div class="window">
+                <div class="title-bar">
+                    <span class="title-bar-text">Game Hub Control Center</span>
+                    <div class="title-bar-controls">
+                        <span class="title-bar-btn" aria-label="Minimize">_</span>
+                        <span class="title-bar-btn" aria-label="Maximize">□</span>
+                        <span class="title-bar-btn" aria-label="Close">×</span>
+                    </div>
+                </div>
+                <div class="window-body">
+                    <p class="intro-text">A lightweight, local-first platform for classic games with authentic Windows 2000 styling.</p>
+                </div>
             </div>
-            <button id="close-modal-btn" class="btn btn-secondary" style="margin-top: 1.5rem;">Cancel</button>
+        </header>
+
+        <main class="left-panels">
+            <section id="main-lobby" class="window">
+                <div class="title-bar">
+                    <span class="title-bar-text">Player Setup &amp; Quick Actions</span>
+                </div>
+                <div class="window-body">
+                    <h1 class="app-title">Game Hub</h1>
+                    <p class="tagline">Welcome to the modernized retro experience.</p>
+
+                    <p id="name-greeting" class="name-greeting">Welcome, <span id="player-name-preview">Guest</span>!</p>
+
+                    <div class="name-row">
+                        <input id="displayNameInput" class="input-field" placeholder="Your display name" maxlength="24">
+                        <button id="saveDisplayNameBtn" class="btn">Save Name</button>
+                    </div>
+
+                    <div class="window-section classic-raised">
+                        <h2>Identity</h2>
+                        <p>Choose the name that will appear in match lobbies and scoreboards.</p>
+                        <div class="name-input-row">
+                            <input type="text" id="player-name-input" class="input-field" placeholder="Enter your display name..." maxlength="24">
+                            <button id="save-name-btn" class="btn">Save Name</button>
+                        </div>
+                        <p id="name-status" class="name-status hidden"></p>
+                    </div>
+
+                    <div class="window-section classic-raised">
+                        <h2>Play Online (P2P)</h2>
+                        <p>Enter a shared, secret room code to connect directly with a friend over the internet.</p>
+                        <div class="input-row">
+                            <input type="text" id="online-room-code" placeholder="Enter Room Code..." class="input-field">
+                            <button id="join-online-btn" class="btn btn-primary">Join</button>
+                        </div>
+                    </div>
+
+                    <div class="window-section classic-raised">
+                        <h2>Play on Local WiFi</h2>
+                        <p>Create or join a game with others on the same network.</p>
+                        <button id="show-create-game-modal-btn" class="btn btn-primary">Create New LAN Game</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="match-lobby" class="window hidden">
+                <div class="title-bar">
+                    <span class="title-bar-text">Match Lobby</span>
+                </div>
+                <div class="window-body">
+                    <h1 id="match-lobby-gametype" class="window-heading">Game Lobby</h1>
+                    <p>The game will begin when the host starts the match.</p>
+
+                    <div class="match-lobby classic-sunken">
+                        <div class="player-card classic-raised" id="player1-card">
+                            <p class="player-name">Player 1 (Host)</p>
+                            <p id="player1-status" class="status not-ready">Not Ready</p>
+                        </div>
+                        <div class="player-card classic-raised" id="player2-card">
+                            <p class="player-name">Waiting for Player...</p>
+                            <p id="player2-status" class="status not-ready">Not Ready</p>
+                        </div>
+                    </div>
+                    <div class="match-controls">
+                        <button id="ready-btn" class="btn btn-warning">Ready Up</button>
+                        <button id="start-game-btn" class="btn btn-primary hidden" disabled>Start Game</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="game-ui" class="window hidden">
+                <div class="title-bar">
+                    <span class="title-bar-text">Game Session</span>
+                </div>
+                <div class="window-body">
+                    <div id="game-info-bar" class="classic-raised">
+                        <div>
+                            <p>Mode: <b id="game-mode"></b></p>
+                            <p>Your Color: <b id="player-color"></b></p>
+                        </div>
+                        <h2 id="turn-indicator"></h2>
+                    </div>
+                    <div id="scoreboard" class="scoreboard classic-raised hidden">
+                        <p id="score-text">Red: 0 – Black: 0</p>
+                    </div>
+                    <div id="game-container" class="classic-sunken"></div>
+                    <div id="game-over-message" class="modal-overlay hidden">
+                        <div class="modal-content classic-raised">
+                            <h1 id="winner-text"></h1>
+                            <button onclick="location.reload()" class="btn btn-primary">Back to Lobby</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <aside class="lobby-list">
+            <div class="window" style="height: 100%;">
+                <div class="title-bar">
+                    <span class="title-bar-text">Available LAN Games</span>
+                </div>
+                <div class="window-body lobby-body">
+                    <div class="classic-sunken lobby-scroll">
+                        <div id="room-list">
+                            <p class="text-muted">No open games found. Create one!</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <footer class="footer">
+            <div class="window">
+                <div class="title-bar">
+                    <span class="title-bar-text">Server Status</span>
+                </div>
+                <div class="window-body status-body">
+                    <div class="status-indicator online">Online</div>
+                    <div class="status-message">Local multiplayer services are running.</div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <div id="create-game-modal" class="modal-overlay hidden">
+        <div class="modal-content classic-raised">
+            <div class="title-bar">
+                <span class="title-bar-text">Create a New Game</span>
+            </div>
+            <div class="modal-body">
+                <p>Choose a game to host on the local network.</p>
+                <div id="game-selection-list" class="selection-list"></div>
+                <div class="modal-actions">
+                    <button id="close-modal-btn" class="btn">Cancel</button>
+                </div>
+            </div>
         </div>
     </div>
 
