@@ -132,37 +132,28 @@ io.on('connection', (socket) => {
             const winner = checkForWinner(room.gameState);
             if (winner) {
                 const winnerColor = winner;
-                const winnerName = winnerColor ? winnerColor.toUpperCase() : 'Unknown';
+                const { winnerName, isMatchWin } = finalizeRoundWin(room, winnerColor);
 
-                room.score[winnerColor] += 1;
-                room.gameState.score = { ...room.score };
+                io.to(roomId).emit('gameStateUpdate', room.gameState);
 
-                if (room.score[winnerColor] >= 2) {
-                    room.gameState.gameOver = true;
-                    room.gameState.winner = winnerColor;
-                    room.gameState.winnerName = winnerName;
-                    io.to(roomId).emit('gameStateUpdate', room.gameState);
-                } else {
-                    room.gameState.gameOver = false;
-                    room.gameState.winner = null;
-                    room.gameState.roundWinner = winnerColor;
-                    io.to(roomId).emit('gameStateUpdate', room.gameState);
-
-                    io.to(roomId).emit('roundEnd', {
-                        winnerColor,
-                        winnerName,
-                        redScore: room.score.red,
-                        blackScore: room.score.black,
-                        round: room.round
-                    });
-
-                    room.round += 1;
-                    room.gameState = initializeCheckersState(room.players, room.round, room.score);
-
-                    setTimeout(() => {
-                        io.to(roomId).emit('gameStart', { gameState: room.gameState, players: room.players });
-                    }, 2000);
+                if (isMatchWin) {
+                    return;
                 }
+
+                io.to(roomId).emit('roundEnd', {
+                    winnerColor,
+                    winnerName,
+                    redScore: room.score.red,
+                    blackScore: room.score.black,
+                    round: room.round
+                });
+
+                room.round += 1;
+                room.gameState = initializeCheckersState(room.players, room.round, room.score);
+
+                setTimeout(() => {
+                    io.to(roomId).emit('gameStart', { gameState: room.gameState, players: room.players, mode: room.mode });
+                }, 2000);
             } else {
                 room.gameState.score = { ...room.score };
                 io.to(roomId).emit('gameStateUpdate', room.gameState);
@@ -246,11 +237,44 @@ function getOpenRooms() {
     return openRooms;
 }
 
-function sanitizeUsername(rawName) {
-    if (rawName === null || rawName === undefined) return null;
-    const cleaned = String(rawName).replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!cleaned) return null;
-    return cleaned.slice(0, 24);
+function sanitizeUsername(name) {
+    if (typeof name !== 'string') return null;
+    const trimmed = name.replace(/\s+/g, ' ').trim();
+    if (!trimmed) return null;
+    return trimmed.slice(0, 24);
+}
+
+function getPlayerNameByColor(room, color) {
+    if (!room || !color) return null;
+    const player = Object.values(room.players || {}).find(p => p.color === color);
+    const username = player?.username;
+    if (typeof username === 'string') {
+        const trimmed = username.replace(/\s+/g, ' ').trim();
+        if (trimmed) {
+            return trimmed.slice(0, 24);
+        }
+    }
+    return null;
+}
+
+function finalizeRoundWin(room, winnerColor) {
+    const winnerName = getPlayerNameByColor(room, winnerColor) || winnerColor.toUpperCase();
+    room.score[winnerColor] += 1;
+    room.gameState.score = { ...room.score };
+
+    const matchComplete = room.score[winnerColor] >= 2;
+    if (matchComplete) {
+        room.gameState.gameOver = true;
+        room.gameState.winner = winnerColor;
+        room.gameState.winnerName = winnerName;
+    } else {
+        room.gameState.gameOver = false;
+        room.gameState.winner = null;
+        room.gameState.winnerName = null;
+        room.gameState.roundWinner = winnerColor;
+    }
+
+    return { winnerName, isMatchWin: matchComplete };
 }
 
 // --- Checkers Game State and Rules Engine (Unchanged) ---

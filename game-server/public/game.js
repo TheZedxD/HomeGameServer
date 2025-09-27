@@ -15,6 +15,9 @@ const ui = {
     createGameModal: document.getElementById('create-game-modal'),
 };
 
+const displayNameInput = document.getElementById('displayNameInput');
+const saveDisplayNameBtn = document.getElementById('saveDisplayNameBtn');
+
 const identityEls = {
     input: document.getElementById('player-name-input'),
     saveBtn: document.getElementById('save-name-btn'),
@@ -86,14 +89,19 @@ function showUI(activeUI) {
 }
 
 function initializeIdentity() {
-    if (!identityEls.input || !identityEls.preview) return;
-    const storedName = sanitizeName(readStoredName());
+    const storedName = sanitizeName(readStoredName()).slice(0, 24);
     if (storedName) {
-        myDisplayName = storedName.slice(0, 24);
-        identityEls.input.value = myDisplayName;
+        myDisplayName = storedName;
         updateNamePreview(myDisplayName);
     } else {
         updateNamePreview(DEFAULT_GUEST_NAME);
+    }
+
+    if (identityEls.input) {
+        identityEls.input.value = myDisplayName || '';
+    }
+    if (displayNameInput) {
+        displayNameInput.value = myDisplayName || '';
     }
 
     identityEls.saveBtn?.addEventListener('click', submitDisplayName);
@@ -104,6 +112,18 @@ function initializeIdentity() {
         }
     });
     identityEls.input?.addEventListener('input', clearNameStatus);
+
+    if (saveDisplayNameBtn) {
+        saveDisplayNameBtn.addEventListener('click', saveAndEmitDisplayName);
+    }
+    if (displayNameInput) {
+        displayNameInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                saveAndEmitDisplayName();
+            }
+        });
+    }
 }
 
 function sanitizeName(rawName) {
@@ -113,28 +133,47 @@ function sanitizeName(rawName) {
 
 function submitDisplayName() {
     if (!identityEls.input) return;
-    const sanitized = sanitizeName(identityEls.input.value).slice(0, 24);
+    const result = applyDisplayName(identityEls.input.value, { showStatus: true });
+    if (result) {
+        showNameStatus('Name saved!', 'success');
+    }
+}
+
+function saveAndEmitDisplayName() {
+    const raw = displayNameInput?.value ?? '';
+    applyDisplayName(raw, { showStatus: false });
+}
+
+function applyDisplayName(rawValue, { showStatus = true } = {}) {
+    const sanitized = sanitizeName(rawValue).slice(0, 24);
     if (!sanitized) {
-        showNameStatus('Please enter a name with at least one character.', 'error');
-        return;
+        if (showStatus) {
+            showNameStatus('Please enter a name with at least one character.', 'error');
+        }
+        return null;
     }
 
     myDisplayName = sanitized;
-    identityEls.input.value = myDisplayName;
-    updateNamePreview(myDisplayName);
-    storeDisplayName(myDisplayName);
+    if (identityEls.input) {
+        identityEls.input.value = sanitized;
+    }
+    if (displayNameInput) {
+        displayNameInput.value = sanitized;
+    }
+    updateNamePreview(sanitized);
+    storeDisplayName(sanitized);
 
     if (socket.connected) {
-        socket.emit('setUsername', myDisplayName);
+        socket.emit('setUsername', sanitized);
     }
 
     if (currentPlayers && myPlayerId && currentPlayers[myPlayerId]) {
-        currentPlayers[myPlayerId].username = myDisplayName;
+        currentPlayers[myPlayerId].username = sanitized;
         refreshPlayerLabels();
         updateScoreboardDisplay(latestScore);
     }
 
-    showNameStatus('Name saved!', 'success');
+    return sanitized;
 }
 
 function updateNamePreview(name) {
@@ -163,10 +202,17 @@ function storeDisplayName(name) {
     } catch (error) {
         console.warn('Unable to persist display name to storage.', error);
     }
+    try {
+        localStorage.setItem('displayName', name);
+    } catch (error) {
+        console.warn('Unable to persist display name to storage (displayName key).', error);
+    }
 }
 
 function readStoredName() {
     try {
+        const preferred = localStorage.getItem('displayName');
+        if (preferred) return preferred;
         return localStorage.getItem(NAME_STORAGE_KEY) || '';
     } catch (error) {
         return '';
@@ -195,8 +241,17 @@ mainLobbyEls.joinOnlineBtn.addEventListener('click', () => {
 
 socket.on('connect', () => {
     console.log('Successfully connected to the game server with ID:', socket.id);
-    if (myDisplayName) {
-        socket.emit('setUsername', myDisplayName);
+    const stored = sanitizeName(readStoredName()).slice(0, 24);
+    if (stored) {
+        myDisplayName = stored;
+        if (identityEls.input) {
+            identityEls.input.value = stored;
+        }
+        if (displayNameInput) {
+            displayNameInput.value = stored;
+        }
+        updateNamePreview(stored);
+        socket.emit('setUsername', stored);
     }
 });
 
