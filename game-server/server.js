@@ -41,10 +41,6 @@ io.on('connection', (socket) => {
             : `room_${Math.random().toString(36).substr(2, 5)}`;
 
         if (normalizedMode === 'p2p' && rooms[roomId]) {
-            const room = rooms[roomId];
-            if (Object.keys(room.players).length >= room.maxPlayers) {
-                return socket.emit('error', 'Room is full.');
-            }
             return joinRoom(socket, roomId);
         }
 
@@ -82,7 +78,8 @@ io.on('connection', (socket) => {
             return socket.emit('error', `Room ${raw.toUpperCase()} does not exist.`);
         }
 
-        if (Object.keys(room.players).length >= room.maxPlayers) {
+        const maxPlayers = room.maxPlayers ?? MAX_PLAYERS_PER_ROOM;
+        if (Object.keys(room.players).length >= maxPlayers) {
             return socket.emit('error', 'Room is full.');
         }
 
@@ -206,6 +203,16 @@ io.on('connection', (socket) => {
 function joinRoom(socket, roomId) {
     const player = players[socket.id];
     const room = rooms[roomId];
+
+    if (!room) {
+        return socket.emit('error', `Room ${roomId} does not exist.`);
+    }
+
+    const maxPlayers = room.maxPlayers ?? MAX_PLAYERS_PER_ROOM;
+    const currentPlayerCount = Object.keys(room.players).length;
+    if (currentPlayerCount >= maxPlayers && !room.players[socket.id]) {
+        return socket.emit('error', 'Room is full.');
+    }
 
     player.inRoom = roomId;
     room.players[socket.id] = {
