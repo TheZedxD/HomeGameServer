@@ -115,7 +115,7 @@ io.on('connection', (socket) => {
                  room.score = { red: 0, black: 0 };
                  room.round = 1;
                  room.gameState = initializeCheckersState(room.players, room.round, room.score);
-                 io.to(roomId).emit('gameStart', { gameState: room.gameState, players: room.players });
+                 io.to(roomId).emit('gameStart', { gameState: room.gameState, players: room.players, mode: room.mode });
             } else {
                  socket.emit('error', 'Cannot start: Not all players are ready or the room is not full.');
             }

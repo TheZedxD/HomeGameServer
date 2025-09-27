@@ -234,10 +234,10 @@ socket.on('roomStateUpdate', (room) => {
 });
 
 // Triggered by the server when the host starts the game.
-socket.on('gameStart', ({ gameState, players }) => {
+socket.on('gameStart', ({ gameState, players, mode }) => {
     showUI(ui.gameUI);
     const myPlayer = players[myPlayerId];
-    gameEls.mode.textContent = "LAN"; // This could be updated to show 'P2P' as well
+    gameEls.mode.textContent = (mode === 'p2p') ? 'Online (P2P)' : 'LAN';
     gameEls.color.textContent = myPlayer.color.toUpperCase();
     const colorAccent = playerColorSwatches[myPlayer.color] || '#f5f5dc';
     gameEls.color.style.color = colorAccent;
