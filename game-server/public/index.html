@@ -16,7 +16,19 @@
         <div id="main-lobby">
             <h1>Game Hub</h1>
             <p>A lightweight, local-first platform for classic games.</p>
-            
+
+            <p id="name-greeting" class="name-greeting">Welcome, <span id="player-name-preview">Guest</span>!</p>
+
+            <div class="card identity-card">
+                <h2>Set Your Name</h2>
+                <p>Choose the name that will appear in match lobbies and scoreboards.</p>
+                <div class="name-input-row">
+                    <input type="text" id="player-name-input" class="input-field" placeholder="Enter your display name..." maxlength="24">
+                    <button id="save-name-btn" class="btn btn-secondary name-save-btn">Save Name</button>
+                </div>
+                <p id="name-status" class="name-status hidden"></p>
+            </div>
+
             <div class="card">
                 <h2>Play Online (P2P)</h2>
                 <p>Enter a shared, secret room code to connect directly with a friend over the internet.</p>

@@ -15,6 +15,13 @@ const ui = {
     createGameModal: document.getElementById('create-game-modal'),
 };
 
+const identityEls = {
+    input: document.getElementById('player-name-input'),
+    saveBtn: document.getElementById('save-name-btn'),
+    preview: document.getElementById('player-name-preview'),
+    status: document.getElementById('name-status'),
+};
+
 const mainLobbyEls = {
     joinOnlineBtn: document.getElementById('join-online-btn'),
     onlineRoomCodeInput: document.getElementById('online-room-code'),
@@ -50,8 +57,12 @@ const scoreboardEls = {
     text: document.getElementById('score-text'),
 };
 
+const NAME_STORAGE_KEY = 'homegame.displayName';
+const DEFAULT_GUEST_NAME = 'Guest';
+let myDisplayName = '';
 let currentPlayers = null;
 let playerLabels = { red: 'Red', black: 'Black' };
+let latestScore = { red: 0, black: 0 };
 
 // --- Available Games Data ---
 // This array makes it easy to add more games in the future.
@@ -65,11 +76,101 @@ const playerColorSwatches = {
     black: '#f5f5dc'
 };
 
+initializeIdentity();
+
 // --- UI State Management ---
 // A simple function to switch between the main UI views.
 function showUI(activeUI) {
     Object.values(ui).forEach(el => el.classList.add('hidden'));
     if (activeUI) activeUI.classList.remove('hidden');
+}
+
+function initializeIdentity() {
+    if (!identityEls.input || !identityEls.preview) return;
+    const storedName = sanitizeName(readStoredName());
+    if (storedName) {
+        myDisplayName = storedName.slice(0, 24);
+        identityEls.input.value = myDisplayName;
+        updateNamePreview(myDisplayName);
+    } else {
+        updateNamePreview(DEFAULT_GUEST_NAME);
+    }
+
+    identityEls.saveBtn?.addEventListener('click', submitDisplayName);
+    identityEls.input?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            submitDisplayName();
+        }
+    });
+    identityEls.input?.addEventListener('input', clearNameStatus);
+}
+
+function sanitizeName(rawName) {
+    if (rawName === null || rawName === undefined) return '';
+    return String(rawName).replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function submitDisplayName() {
+    if (!identityEls.input) return;
+    const sanitized = sanitizeName(identityEls.input.value).slice(0, 24);
+    if (!sanitized) {
+        showNameStatus('Please enter a name with at least one character.', 'error');
+        return;
+    }
+
+    myDisplayName = sanitized;
+    identityEls.input.value = myDisplayName;
+    updateNamePreview(myDisplayName);
+    storeDisplayName(myDisplayName);
+
+    if (socket.connected) {
+        socket.emit('setUsername', myDisplayName);
+    }
+
+    if (currentPlayers && myPlayerId && currentPlayers[myPlayerId]) {
+        currentPlayers[myPlayerId].username = myDisplayName;
+        refreshPlayerLabels();
+        updateScoreboardDisplay(latestScore);
+    }
+
+    showNameStatus('Name saved!', 'success');
+}
+
+function updateNamePreview(name) {
+    if (identityEls.preview) {
+        identityEls.preview.textContent = name || DEFAULT_GUEST_NAME;
+    }
+}
+
+function showNameStatus(message, variant = 'success') {
+    if (!identityEls.status) return;
+    identityEls.status.textContent = message;
+    identityEls.status.classList.remove('hidden', 'success', 'error');
+    identityEls.status.classList.add(variant);
+}
+
+function clearNameStatus() {
+    if (!identityEls.status) return;
+    identityEls.status.classList.add('hidden');
+    identityEls.status.textContent = '';
+    identityEls.status.classList.remove('success', 'error');
+}
+
+function storeDisplayName(name) {
+    try {
+        localStorage.setItem(NAME_STORAGE_KEY, name);
+    } catch (error) {
+        console.warn('Unable to persist display name to storage.', error);
+    }
+}
+
+function readStoredName() {
+    try {
+        return localStorage.getItem(NAME_STORAGE_KEY) || '';
+    } catch (error) {
+        return '';
+    }
 }
 
 // --- UI Event Listeners ---
@@ -95,6 +196,9 @@ mainLobbyEls.joinOnlineBtn.addEventListener('click', () => {
 
 socket.on('connect', () => {
     console.log('Successfully connected to the game server with ID:', socket.id);
+    if (myDisplayName) {
+        socket.emit('setUsername', myDisplayName);
+    }
 });
 
 // Updates the list of available LAN games in the main lobby.
@@ -128,6 +232,7 @@ socket.on('joinedMatchLobby', ({ room, yourId }) => {
 // Called whenever the state of the match lobby changes (e.g., a player joins, readies up).
 socket.on('roomStateUpdate', (room) => {
     updateMatchLobby(room);
+    syncCurrentPlayersWithRoom(room);
 });
 
 // Triggered by the server when the host starts the game.
@@ -225,15 +330,19 @@ function updateMatchLobby(room) {
     // Update Player 1 Card (always the first player who joined)
     const p1 = room.players[playerIds[0]];
     matchLobbyEls.player1Card.classList.add('filled');
-    matchLobbyEls.player1Card.querySelector('.player-name').textContent = `Player 1 ${playerIds[0] === room.hostId ? '(Host)' : ''}`;
+    const p1Name = derivePlayerLabel(p1, 'Player 1');
+    const p1HostSuffix = playerIds[0] === room.hostId ? ' (Host)' : '';
+    matchLobbyEls.player1Card.querySelector('.player-name').textContent = `${p1Name}${p1HostSuffix}`;
     matchLobbyEls.player1Status.textContent = p1.isReady ? 'Ready' : 'Not Ready';
     matchLobbyEls.player1Status.className = `status ${p1.isReady ? 'ready' : 'not-ready'}`;
-    
+
     // Update Player 2 Card
     if (playerIds.length > 1) {
         const p2 = room.players[playerIds[1]];
         matchLobbyEls.player2Card.classList.add('filled');
-        matchLobbyEls.player2Card.querySelector('.player-name').textContent = `Player 2 ${playerIds[1] === room.hostId ? '(Host)' : ''}`;
+        const p2Name = derivePlayerLabel(p2, 'Player 2');
+        const p2HostSuffix = playerIds[1] === room.hostId ? ' (Host)' : '';
+        matchLobbyEls.player2Card.querySelector('.player-name').textContent = `${p2Name}${p2HostSuffix}`;
         matchLobbyEls.player2Status.textContent = p2.isReady ? 'Ready' : 'Not Ready';
         matchLobbyEls.player2Status.className = `status ${p2.isReady ? 'ready' : 'not-ready'}`;
     } else {
@@ -270,6 +379,17 @@ function updateMatchLobby(room) {
     }
 }
 
+function syncCurrentPlayersWithRoom(room) {
+    if (!room || !currentPlayers) return;
+    Object.entries(room.players).forEach(([id, player]) => {
+        if (currentPlayers[id]) {
+            currentPlayers[id].username = player.username;
+        }
+    });
+    refreshPlayerLabels();
+    updateScoreboardDisplay(latestScore);
+}
+
 function updateTurnIndicator(gameState) {
     if (!gameState) return;
     gameEls.turn.textContent = `${gameState.turn.toUpperCase()}'s Turn`;
@@ -296,7 +416,9 @@ function refreshPlayerLabels() {
 
 function derivePlayerLabel(player, fallback) {
     if (!player) return fallback;
-    return player.username || player.name || player.displayName || player.playerName || fallback;
+    const rawLabel = player.username || player.name || player.displayName || player.playerName || '';
+    const cleaned = sanitizeName(rawLabel).slice(0, 24);
+    return cleaned || fallback;
 }
 
 function formatColorLabel(color) {
@@ -309,6 +431,7 @@ function updateScoreboardDisplay(score = { red: 0, black: 0 }) {
     if (!scoreboardEls.text) return;
     const redScore = score.red ?? 0;
     const blackScore = score.black ?? 0;
+    latestScore = { red: redScore, black: blackScore };
     scoreboardEls.text.textContent = `${playerLabels.red}: ${redScore} – ${playerLabels.black}: ${blackScore}`;
 }
 
