@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { Server } = require('socket.io');
+const multer = require('multer');
 
 const app = express();
 const server = http.createServer(app);
@@ -19,6 +20,15 @@ const UPLOAD_DIR = path.join(__dirname, 'public/uploads/profiles');
 const SESSION_COOKIE_NAME = 'homegame.sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 const MAX_UPLOAD_SIZE = 2 * 1024 * 1024; // 2 MB
+const ALLOWED_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
+const MIME_EXTENSION_MAP = {
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+    'image/svg+xml': '.svg'
+};
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -26,6 +36,41 @@ initializeUserStore();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+const uploadStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => {
+        cb(null, UPLOAD_DIR);
+    },
+    filename: (req, file, cb) => {
+        const baseName = sanitizeAccountName(req.user?.username || '') || 'avatar';
+        const originalExt = path.extname(file.originalname || '').toLowerCase();
+        const mimeExt = MIME_EXTENSION_MAP[(file.mimetype || '').toLowerCase()] || '.png';
+        const safeExt = ALLOWED_IMAGE_EXTENSIONS.has(originalExt) ? originalExt : mimeExt;
+        const finalExt = ALLOWED_IMAGE_EXTENSIONS.has(safeExt) ? safeExt : '.png';
+        const timestamp = Date.now();
+        cb(null, `${baseName}-${timestamp}${finalExt}`);
+    }
+});
+
+const upload = multer({
+    storage: uploadStorage,
+    limits: { fileSize: MAX_UPLOAD_SIZE },
+    fileFilter: (_req, file, cb) => {
+        const mimeType = (file.mimetype || '').toLowerCase();
+        if (!mimeType.startsWith('image/')) {
+            const error = new Error('Only image uploads are allowed.');
+            error.code = 'UNSUPPORTED_MEDIA_TYPE';
+            return cb(error);
+        }
+        const extension = path.extname(file.originalname || '').toLowerCase();
+        if (!ALLOWED_IMAGE_EXTENSIONS.has(extension) && !Object.prototype.hasOwnProperty.call(MIME_EXTENSION_MAP, mimeType)) {
+            const error = new Error('Only common image formats are supported.');
+            error.code = 'UNSUPPORTED_MEDIA_TYPE';
+            return cb(error);
+        }
+        cb(null, true);
+    }
+});
 
 const sessions = new Map();
 let players = {};
@@ -37,7 +82,8 @@ app.use((req, res, next) => {
     const sessionId = req.cookies[SESSION_COOKIE_NAME];
     if (sessionId && sessions.has(sessionId)) {
         const session = sessions.get(sessionId);
-        if (Date.now() - session.createdAt > SESSION_TTL_MS) {
+        const lastAccess = session.lastAccess ?? session.createdAt;
+        if (Date.now() - lastAccess > SESSION_TTL_MS) {
             sessions.delete(sessionId);
         } else {
             session.lastAccess = Date.now();
@@ -197,56 +243,19 @@ app.post('/api/profile', requireAuth, (req, res) => {
     });
 });
 
-app.post('/api/profile/avatar', requireAuth, (req, res) => {
-    const contentType = req.headers['content-type'] || '';
-    if (!contentType.startsWith('multipart/form-data')) {
-        return res.status(400).json({ error: 'Invalid upload request.' });
+app.post('/api/profile/avatar', requireAuth, upload.single('avatar'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'No file provided.' });
     }
 
-    const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
-    if (!boundaryMatch) {
-        return res.status(400).json({ error: 'Upload boundary not found.' });
+    const relativePath = `/uploads/profiles/${req.file.filename}`;
+    const updated = updateUserAvatar(req.session.username, relativePath);
+    if (!updated) {
+        fs.unlink(req.file.path, () => {});
+        return res.status(404).json({ error: 'Profile not found.' });
     }
 
-    const boundary = boundaryMatch[1] || boundaryMatch[2];
-    const chunks = [];
-    let total = 0;
-    let aborted = false;
-
-    req.on('data', (chunk) => {
-        if (aborted) return;
-        total += chunk.length;
-        if (total > MAX_UPLOAD_SIZE) {
-            aborted = true;
-            res.status(413).json({ error: 'File is too large. Maximum size is 2MB.' });
-            req.destroy();
-            return;
-        }
-        chunks.push(chunk);
-    });
-
-    req.on('end', () => {
-        if (aborted) return;
-        try {
-            const buffer = Buffer.concat(chunks);
-            const fileInfo = extractMultipartFile(buffer, boundary);
-            if (!fileInfo || !fileInfo.buffer.length) {
-                return res.status(400).json({ error: 'No file provided.' });
-            }
-
-            const timestamp = Date.now();
-            const safeBaseName = req.user.username.replace(/[^a-zA-Z0-9_-]/g, '');
-            const finalName = `${safeBaseName || 'avatar'}-${timestamp}${fileInfo.extension}`;
-            const finalPath = path.join(UPLOAD_DIR, finalName);
-            fs.writeFileSync(finalPath, fileInfo.buffer);
-
-            updateUserAvatar(req.session.username, `/uploads/profiles/${finalName}`);
-            res.json({ avatarPath: `/uploads/profiles/${finalName}` });
-        } catch (error) {
-            console.error('Avatar upload failed:', error);
-            res.status(400).json({ error: 'Unable to process uploaded file.' });
-        }
-    });
+    res.json({ avatarPath: relativePath });
 });
 
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
@@ -627,8 +636,9 @@ function checkForWinner(gameState) {
 }
 
 function issueSession(res, usernameKey) {
+    const timestamp = Date.now();
     const sessionId = crypto.randomUUID();
-    sessions.set(sessionId, { id: sessionId, username: usernameKey, createdAt: Date.now() });
+    sessions.set(sessionId, { id: sessionId, username: usernameKey, createdAt: timestamp, lastAccess: timestamp });
     res.setHeader('Set-Cookie', `${SESSION_COOKIE_NAME}=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
 }
 
@@ -694,10 +704,15 @@ function incrementUserWins(accountName) {
 
 function updateUserAvatar(usernameKey, avatarPath) {
     const store = readUserStore();
-    if (!store.users[usernameKey]) return;
-    const existingPath = store.users[usernameKey].avatarPath;
+    const record = store.users[usernameKey];
+    if (!record) {
+        return false;
+    }
+
+    const existingPath = record.avatarPath;
     if (existingPath && existingPath.startsWith('/uploads/profiles/')) {
-        const absolutePath = path.join(__dirname, 'public', existingPath);
+        const normalizedExisting = existingPath.replace(/^\/+/, '');
+        const absolutePath = path.join(__dirname, 'public', normalizedExisting);
         if (fs.existsSync(absolutePath)) {
             try {
                 fs.unlinkSync(absolutePath);
@@ -706,61 +721,28 @@ function updateUserAvatar(usernameKey, avatarPath) {
             }
         }
     }
-    store.users[usernameKey].avatarPath = avatarPath;
+
+    record.avatarPath = avatarPath;
     writeUserStore(store);
+    return true;
 }
 
-function extractMultipartFile(buffer, boundary) {
-    const boundaryText = `--${boundary}`;
-    const boundaryBuffer = Buffer.from(boundaryText);
-    const headerDelimiter = Buffer.from('\r\n\r\n');
-    let start = buffer.indexOf(boundaryBuffer);
-    if (start === -1) {
-        throw new Error('Boundary not found in form data.');
-    }
-
-    start += boundaryBuffer.length + 2; // Skip boundary and CRLF
-    const headerEnd = buffer.indexOf(headerDelimiter, start);
-    if (headerEnd === -1) {
-        throw new Error('Malformed part headers.');
-    }
-
-    const headers = buffer.slice(start, headerEnd).toString('utf8');
-    const contentStart = headerEnd + headerDelimiter.length;
-    const closingBoundary = Buffer.from(`\r\n${boundaryText}--`);
-    let contentEnd = buffer.indexOf(closingBoundary, contentStart);
-    if (contentEnd === -1) {
-        const nextBoundary = Buffer.from(`\r\n${boundaryText}`);
-        contentEnd = buffer.indexOf(nextBoundary, contentStart);
-        if (contentEnd === -1) {
-            throw new Error('Malformed multipart payload.');
+app.use((err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(413).json({ error: 'File is too large. Maximum size is 2MB.' });
         }
+        return res.status(400).json({ error: err.message || 'Upload failed.' });
     }
-
-    let fileEnd = contentEnd;
-    if (buffer[fileEnd - 2] === 13 && buffer[fileEnd - 1] === 10) {
-        fileEnd -= 2;
+    if (err && err.code === 'UNSUPPORTED_MEDIA_TYPE') {
+        return res.status(415).json({ error: err.message || 'Unsupported file type.' });
     }
-
-    const fileBuffer = buffer.slice(contentStart, fileEnd);
-    const filenameMatch = headers.match(/filename="([^"]*)"/i);
-    const contentTypeMatch = headers.match(/Content-Type:\s*([^\r\n]+)/i);
-    const filename = filenameMatch ? path.basename(filenameMatch[1]) : `upload-${Date.now()}`;
-    const ext = path.extname(filename).toLowerCase();
-    const allowedExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
-    const safeExtension = allowedExtensions.includes(ext) ? ext : '.png';
-    const contentType = contentTypeMatch ? contentTypeMatch[1].trim() : 'application/octet-stream';
-
-    if (!allowedExtensions.includes(ext) && contentType.startsWith('image/')) {
-        const subtype = contentType.split('/')[1] || 'png';
-        const derivedExt = `.${subtype.toLowerCase()}`;
-        if (allowedExtensions.includes(derivedExt)) {
-            return { buffer: fileBuffer, extension: derivedExt };
-        }
+    if (err) {
+        console.error('Unhandled error:', err);
+        return res.status(err.statusCode || 500).json({ error: err.message || 'Unexpected server error.' });
     }
-
-    return { buffer: fileBuffer, extension: safeExtension };
-}
+    next();
+});
 
 const PORT = process.env.PORT || 8081;
 server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
