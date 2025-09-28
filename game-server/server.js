@@ -7,6 +7,8 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const session = require('express-session');
+const createFileStore = require('connect-session-file');
 const { Server } = require('socket.io');
 
 const app = express();
@@ -18,11 +20,10 @@ const USER_DATA_FILE = path.join(DATA_DIR, 'users.json');
 const UPLOAD_DIR = path.join(__dirname, 'public/uploads/profiles');
 const SESSION_COOKIE_NAME = 'homegame.sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
-const SESSION_STORE_FILE = path.join(DATA_DIR, 'sessions.json');
+const SESSION_STORE_DIR = path.join(DATA_DIR, 'sessions');
+const SESSION_SECRET = process.env.SESSION_SECRET || 'homegame_session_secret';
 const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
 const SCRYPT_KEY_LENGTH = 64;
-const MAX_SESSIONS = 5000;
-const SESSION_CLEANUP_INTERVAL_MS = 1000 * 60 * 60; // 1 hour
 const COOKIE_SECURE = process.env.NODE_ENV === 'production';
 const MAX_UPLOAD_SIZE = 2 * 1024 * 1024; // 2 MB
 
@@ -42,163 +43,65 @@ function validateCSRFToken(sessionId, token) {
 function csrfMiddleware(req, res, next) {
     if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
         const token = req.body._csrf || req.headers['x-csrf-token'];
-        if (!req.session?.id || !validateCSRFToken(req.session.id, token)) {
+        const sessionId = req.sessionID;
+        if (!sessionId || !validateCSRFToken(sessionId, token)) {
             return res.status(403).json({ error: 'Invalid CSRF token' });
         }
     }
     next();
 }
 
-class PersistentSessionStore {
-    constructor(filePath) {
-        this.filePath = filePath;
-        this.sessions = new Map();
-        this.load();
-    }
-
-    load() {
-        try {
-            if (!fs.existsSync(this.filePath)) {
-                this.persist();
-                return;
-            }
-            const raw = fs.readFileSync(this.filePath, 'utf8');
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed.sessions)) {
-                parsed.sessions.forEach((session) => {
-                    if (session && session.id && session.username) {
-                        this.sessions.set(session.id, session);
-                    }
-                });
-            }
-        } catch (error) {
-            console.error('Failed to load session store:', error);
-            this.sessions = new Map();
-        }
-    }
-
-    persist() {
-        const payload = {
-            sessions: Array.from(this.sessions.values())
-        };
-        fs.writeFileSync(this.filePath, JSON.stringify(payload, null, 2));
-    }
-
-    create(usernameKey) {
-        this.cleanupExpired(SESSION_TTL_MS);
-        if (this.sessions.size >= MAX_SESSIONS) {
-            this.removeStaleSessions();
-        }
-        const sessionId = crypto.randomUUID();
-        const session = {
-            id: sessionId,
-            username: usernameKey,
-            createdAt: Date.now(),
-            lastAccess: Date.now()
-        };
-        this.sessions.set(sessionId, session);
-        this.persist();
-        return session;
-    }
-
-    get(sessionId) {
-        return this.sessions.get(sessionId) || null;
-    }
-
-    touch(sessionId) {
-        const session = this.sessions.get(sessionId);
-        if (!session) return;
-        session.lastAccess = Date.now();
-    }
-
-    update(sessionId, updates) {
-        const session = this.sessions.get(sessionId);
-        if (!session) return null;
-        Object.assign(session, updates, { lastAccess: Date.now() });
-        this.persist();
-        return session;
-    }
-
-    delete(sessionId) {
-        if (this.sessions.delete(sessionId)) {
-            csrfTokens.delete(sessionId);
-            this.persist();
-        }
-    }
-
-    cleanupExpired(ttl) {
-        const now = Date.now();
-        let dirty = false;
-        for (const [id, session] of this.sessions.entries()) {
-            if (now - session.createdAt > ttl) {
-                this.sessions.delete(id);
-                csrfTokens.delete(id);
-                dirty = true;
-            }
-        }
-        if (dirty) {
-            this.persist();
-        }
-    }
-
-    removeStaleSessions() {
-        if (this.sessions.size < MAX_SESSIONS) return;
-        const sorted = Array.from(this.sessions.values()).sort((a, b) => {
-            return (a.lastAccess || a.createdAt) - (b.lastAccess || b.createdAt);
-        });
-        const targetSize = Math.floor(MAX_SESSIONS * 0.9);
-        for (const session of sorted) {
-            if (this.sessions.size <= targetSize) {
-                break;
-            }
-            this.sessions.delete(session.id);
-            csrfTokens.delete(session.id);
-        }
-        this.persist();
-    }
-}
-
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(SESSION_STORE_DIR, { recursive: true });
 initializeUserStore();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const sessionStore = new PersistentSessionStore(SESSION_STORE_FILE);
-sessionStore.cleanupExpired(SESSION_TTL_MS);
-setInterval(() => sessionStore.cleanupExpired(SESSION_TTL_MS), SESSION_CLEANUP_INTERVAL_MS);
-let players = {};
-let rooms = {};
-const MAX_PLAYERS_PER_ROOM = 2;
+const resolvedStoreFactory = typeof createFileStore === 'function'
+    ? createFileStore(session)
+    : null;
+const FileStore = typeof resolvedStoreFactory === 'function'
+    ? resolvedStoreFactory
+    : createFileStore;
+
+if (typeof FileStore !== 'function') {
+    throw new Error('connect-session-file did not provide a valid session store constructor.');
+}
+
+const sessionMiddleware = session({
+    name: SESSION_COOKIE_NAME,
+    secret: SESSION_SECRET,
+    store: new FileStore({
+        path: SESSION_STORE_DIR,
+        ttl: Math.floor(SESSION_TTL_MS / 1000)
+    }),
+    resave: false,
+    saveUninitialized: false,
+    rolling: true,
+    cookie: {
+        maxAge: SESSION_TTL_MS,
+        sameSite: 'strict',
+        secure: COOKIE_SECURE,
+        httpOnly: true
+    }
+});
+
+app.use(sessionMiddleware);
 
 app.use((req, res, next) => {
-    req.cookies = parseCookies(req.headers.cookie || '');
-    let sessionId = req.cookies[SESSION_COOKIE_NAME];
-    let session = sessionId ? sessionStore.get(sessionId) : null;
+    req.user = null;
 
-    if (session && Date.now() - session.createdAt > SESSION_TTL_MS) {
-        sessionStore.delete(sessionId);
-        session = null;
+    if (req.session) {
+        if (!req.session.createdAt) {
+            req.session.createdAt = Date.now();
+        }
+        req.session.lastAccess = Date.now();
     }
 
-    if (!session) {
-        session = sessionStore.create(null);
-        sessionId = session.id;
-        setCookie(res, SESSION_COOKIE_NAME, session.id, {
-            httpOnly: true,
-            sameSite: 'Strict',
-            maxAge: Math.floor(SESSION_TTL_MS / 1000),
-            secure: COOKIE_SECURE
-        });
-    } else {
-        sessionStore.touch(sessionId);
-    }
-
-    req.session = session;
-
-    if (session?.username) {
-        const userRecord = getUserRecord(session.username);
+    if (req.session?.username) {
+        const userRecord = getUserRecord(req.session.username);
         if (userRecord) {
             req.user = {
                 username: userRecord.username,
@@ -206,6 +109,8 @@ app.use((req, res, next) => {
                 wins: userRecord.wins || 0,
                 avatarPath: userRecord.avatarPath || null
             };
+        } else {
+            req.session.username = null;
         }
     }
 
@@ -217,11 +122,21 @@ app.use((req, res, next) => {
     next();
 });
 
+let players = {};
+let rooms = {};
+const MAX_PLAYERS_PER_ROOM = 2;
+
 app.get('/api/csrf-token', (req, res) => {
-    if (!req.session?.id) {
+    const sessionId = req.sessionID;
+    if (!sessionId) {
         return res.status(401).json({ error: 'Session not established' });
     }
-    const token = generateCSRFToken(req.session.id);
+
+    if (req.session && !req.session.csrfSeeded) {
+        req.session.csrfSeeded = Date.now();
+    }
+
+    const token = generateCSRFToken(sessionId);
     res.json({ token });
 });
 
@@ -278,11 +193,7 @@ app.post('/signup', csrfMiddleware, (req, res) => {
     };
     writeUserStore(store);
 
-    if (req.session?.id) {
-        sessionStore.delete(req.session.id);
-    }
-    issueSession(res, key);
-    res.redirect('/');
+    return establishSession(req, res, key, () => res.redirect('/'));
 });
 
 app.post('/login', csrfMiddleware, (req, res) => {
@@ -309,25 +220,38 @@ app.post('/login', csrfMiddleware, (req, res) => {
         writeUserStore(store);
     }
 
-    if (req.session?.id) {
-        sessionStore.delete(req.session.id);
-    }
-    issueSession(res, userKey);
-    res.redirect('/');
+    return establishSession(req, res, userKey, () => res.redirect('/'));
 });
 
 app.post('/logout', csrfMiddleware, (req, res) => {
-    const sessionId = req.cookies[SESSION_COOKIE_NAME];
+    const sessionId = req.sessionID;
     if (sessionId) {
-        sessionStore.delete(sessionId);
+        csrfTokens.delete(sessionId);
     }
-    setCookie(res, SESSION_COOKIE_NAME, '', {
-        httpOnly: true,
-        sameSite: 'Strict',
-        maxAge: 0,
-        secure: COOKIE_SECURE
+
+    if (!req.session) {
+        res.clearCookie(SESSION_COOKIE_NAME, {
+            httpOnly: true,
+            sameSite: 'strict',
+            secure: COOKIE_SECURE,
+            path: '/'
+        });
+        return res.status(204).end();
+    }
+
+    req.session.destroy((err) => {
+        if (err) {
+            console.error('Failed to destroy session:', err);
+            return res.status(500).json({ error: 'Unable to logout.' });
+        }
+        res.clearCookie(SESSION_COOKIE_NAME, {
+            httpOnly: true,
+            sameSite: 'strict',
+            secure: COOKIE_SECURE,
+            path: '/'
+        });
+        res.status(204).end();
     });
-    res.status(204).end();
 });
 
 app.get('/api/session', (req, res) => {
@@ -852,61 +776,34 @@ function checkForWinner(gameState) {
     return null;
 }
 
-function issueSession(res, usernameKey) {
-    const session = sessionStore.create(usernameKey);
-    if (!session) return;
-    setCookie(res, SESSION_COOKIE_NAME, session.id, {
-        httpOnly: true,
-        sameSite: 'Strict',
-        maxAge: Math.floor(SESSION_TTL_MS / 1000),
-        secure: COOKIE_SECURE
-    });
-}
+function establishSession(req, res, usernameKey, onSuccess) {
+    const previousSessionId = req.sessionID;
 
-function setCookie(res, name, value, options = {}) {
-    const segments = [`${name}=${encodeURIComponent(value)}`];
-    segments.push(`Path=${options.path || '/'}`);
-    if (typeof options.maxAge === 'number') {
-        segments.push(`Max-Age=${options.maxAge}`);
-        if (options.maxAge === 0) {
-            segments.push('Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+    req.session.regenerate((err) => {
+        if (err) {
+            console.error('Session regeneration failed:', err);
+            return res.status(500).send('Unable to establish session.');
         }
-    }
-    if (options.httpOnly) {
-        segments.push('HttpOnly');
-    }
-    if (options.sameSite) {
-        segments.push(`SameSite=${options.sameSite}`);
-    }
-    if (options.secure) {
-        segments.push('Secure');
-    }
-    if (options.domain) {
-        segments.push(`Domain=${options.domain}`);
-    }
-    appendCookie(res, segments.join('; '));
-}
 
-function appendCookie(res, cookieValue) {
-    const existing = res.getHeader('Set-Cookie');
-    if (!existing) {
-        res.setHeader('Set-Cookie', cookieValue);
-    } else if (Array.isArray(existing)) {
-        res.setHeader('Set-Cookie', [...existing, cookieValue]);
-    } else {
-        res.setHeader('Set-Cookie', [existing, cookieValue]);
-    }
-}
+        if (previousSessionId) {
+            csrfTokens.delete(previousSessionId);
+        }
 
-function parseCookies(cookieHeader) {
-    const cookies = {};
-    if (!cookieHeader) return cookies;
-    cookieHeader.split(';').forEach(cookie => {
-        const [name, ...rest] = cookie.trim().split('=');
-        const value = rest.join('=');
-        cookies[name] = decodeURIComponent(value || '');
+        req.session.username = usernameKey;
+        req.session.createdAt = Date.now();
+        req.session.lastAccess = Date.now();
+
+        req.session.save((saveErr) => {
+            if (saveErr) {
+                console.error('Session save failed:', saveErr);
+                return res.status(500).send('Unable to persist session.');
+            }
+
+            if (typeof onSuccess === 'function') {
+                onSuccess();
+            }
+        });
     });
-    return cookies;
 }
 
 function requireAuth(req, res, next) {
