@@ -141,6 +141,7 @@ if (storedAvatarPath) {
 }
 initializeServiceWorker();
 bootstrapProfile();
+initializeModalDismissal();
 
 // --- UI State Management ---
 // A simple function to switch between the main UI views.
@@ -192,6 +193,19 @@ function initializeIdentity() {
             }
         });
     }
+}
+
+function initializeModalDismissal() {
+    const overlays = Array.from(document.querySelectorAll('.modal-overlay'));
+    overlays.forEach((overlay) => {
+        const modalContent = overlay.querySelector('.modal-content');
+        modalContent?.addEventListener('click', (event) => event.stopPropagation());
+
+        overlay.addEventListener('click', (event) => {
+            if (event.target !== overlay) return;
+            overlay.classList.add('hidden');
+        });
+    });
 }
 
 function sanitizeName(rawName) {
