@@ -12,6 +12,15 @@ const createFileStore = require('connect-session-file');
 const { Server } = require('socket.io');
 const { createModularGameServer } = require('./src/server/gameGateway');
 
+const { createSecurityHeadersMiddleware } = require('./src/security/headers');
+const { createHttpRateLimiter, createSocketRateLimiter, SlidingWindowRateLimiter } = require('./src/security/rateLimiter');
+const { metricsCollector, collectResourceSnapshot } = require('./src/monitoring/metrics');
+const {
+    sanitizeAccountName,
+    sanitizeDisplayName,
+    validateDisplayNameInput,
+    validatePasswordInput,
+} = require('./src/security/validators');
 const GuestSessionManager = require('./lib/guestSessions');
 const {
     ACCESS_TOKEN_COOKIE,
@@ -36,6 +45,26 @@ const modularGameServer = createModularGameServer({
     pluginDirectory: path.join(__dirname, 'src/plugins'),
 });
 
+modularGameServer.resourceMonitor.on('metrics', (snapshot) => {
+    metricsCollector.updateGameMetrics({
+        rooms: snapshot.rooms,
+        players: snapshot.players,
+        activeGames: snapshot.activeGames,
+    });
+    const fallback = collectResourceSnapshot();
+    const system = snapshot.system || {};
+    metricsCollector.updateResourceSnapshot({
+        memory: {
+            rss: system.rss ?? fallback.memory.rss,
+            heapTotal: system.heapTotal ?? fallback.memory.heapTotal,
+            heapUsed: system.heapUsed ?? fallback.memory.heapUsed,
+            external: system.external ?? fallback.memory.external,
+        },
+        cpuLoad: [system.cpuLoad ?? fallback.cpuLoad[0]],
+        uptime: fallback.uptime,
+    });
+});
+
 const DATA_DIR = path.join(__dirname, 'data');
 const USER_DATA_FILE = path.join(DATA_DIR, 'users.json');
 const UPLOAD_DIR = path.join(__dirname, 'public/uploads/profiles');
@@ -52,8 +81,22 @@ const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
 const SCRYPT_KEY_LENGTH = 64;
 const COOKIE_SECURE = process.env.NODE_ENV === 'production';
 const MAX_UPLOAD_SIZE = 2 * 1024 * 1024; // 2 MB
+const HTTP_BODY_LIMIT = process.env.HTTP_BODY_LIMIT || '256kb';
+const FORM_BODY_LIMIT = process.env.FORM_BODY_LIMIT || '512kb';
+const RATE_LIMIT_WRITE_MAX = Number.parseInt(process.env.RATE_LIMIT_WRITE_MAX || '300', 10);
+const AUTH_RATE_LIMIT_MAX = Number.parseInt(process.env.AUTH_RATE_LIMIT_MAX || '10', 10);
+const SOCKET_EVENT_RATE_LIMIT = Number.parseInt(process.env.SOCKET_EVENT_RATE_LIMIT || '80', 10);
+const SOCKET_CONNECTION_RATE_LIMIT = Number.parseInt(process.env.SOCKET_CONNECTION_RATE_LIMIT || '120', 10);
+const METRICS_TOKEN = process.env.METRICS_TOKEN || null;
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 
 const csrfTokens = new Map();
+const USER_STORE_CACHE_TTL_MS = 5000;
+let userStoreCache = { data: null, mtime: 0, expiresAt: 0 };
+let userStoreIndex = new Map();
 
 function generateLegacyCsrfToken(sessionId) {
     const token = crypto.randomBytes(32).toString('hex');
@@ -113,8 +156,77 @@ process.on('exit', () => guestSessionManager.stop());
 process.on('SIGTERM', () => guestSessionManager.stop());
 process.on('SIGINT', () => guestSessionManager.stop());
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
+
+app.use((req, res, next) => {
+    res.locals.routePath = req.originalUrl.split('?')[0];
+    const start = process.hrtime.bigint();
+    res.on('finish', () => {
+        const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+        const route = res.locals.routePath || req.route?.path || req.originalUrl.split('?')[0];
+        metricsCollector.recordHttpSample({
+            durationMs,
+            method: req.method,
+            route,
+            statusCode: res.statusCode,
+        });
+    });
+    next();
+});
+
+const securityHeadersMiddleware = createSecurityHeadersMiddleware();
+app.use(securityHeadersMiddleware);
+
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin) {
+        if (ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes(origin)) {
+            res.setHeader('Access-Control-Allow-Origin', origin);
+            res.setHeader('Access-Control-Allow-Credentials', 'true');
+        } else {
+            metricsCollector.recordSecurityEvent('cors_denied');
+            return res.status(403).json({ error: 'Origin not allowed' });
+        }
+        res.setHeader('Vary', 'Origin');
+    }
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-CSRF-Token, X-Requested-With');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
+    if (req.method === 'OPTIONS') {
+        return res.status(204).end();
+    }
+    next();
+});
+
+app.use(express.json({ limit: HTTP_BODY_LIMIT }));
+app.use(express.urlencoded({ extended: true, limit: FORM_BODY_LIMIT }));
+
+const writeLimiter = createHttpRateLimiter({
+    windowMs: 60000,
+    max: RATE_LIMIT_WRITE_MAX,
+    skip: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method),
+    onLimit: () => metricsCollector.recordSecurityEvent('http_rate_limit'),
+});
+app.use(writeLimiter);
+
+const handshakeLimiter = new SlidingWindowRateLimiter({
+    windowMs: 60000,
+    max: SOCKET_CONNECTION_RATE_LIMIT,
+});
+
+const socketEventRateLimiterFactory = () => createSocketRateLimiter({
+    windowMs: 1000,
+    max: SOCKET_EVENT_RATE_LIMIT,
+    onLimit: () => metricsCollector.recordSecurityEvent('socket_rate_limit'),
+});
+
+const authLimiter = createHttpRateLimiter({
+    windowMs: 5 * 60 * 1000,
+    max: AUTH_RATE_LIMIT_MAX,
+    keyGenerator: (req) => `${req.ip || req.connection?.remoteAddress || 'anonymous'}:auth`,
+    message: 'Too many authentication attempts. Please wait before retrying.',
+    onLimit: () => metricsCollector.recordSecurityEvent('auth_rate_limit'),
+});
 app.use((req, res, next) => {
     req.cookies = parseCookies(req.headers?.cookie || '');
     next();
@@ -249,6 +361,23 @@ app.use((req, res, next) => {
     next();
 });
 
+app.get('/healthz', (req, res) => {
+    const snapshot = collectResourceSnapshot();
+    res.json({
+        status: 'ok',
+        timestamp: Date.now(),
+        metrics: {
+            uptime: snapshot.uptime,
+            memory: snapshot.memory,
+            cpuLoad: snapshot.cpuLoad,
+            activeConnections: metricsCollector.socketConnections,
+        },
+    });
+});
+
+const metricsRouter = metricsCollector.createRouter({ token: METRICS_TOKEN });
+app.use('/metrics', metricsRouter);
+
 let players = {};
 
 app.get('/api/csrf-token', (req, res) => {
@@ -289,7 +418,7 @@ app.get('/signup', (req, res) => {
     res.sendFile(path.join(__dirname, 'public/signup.html'));
 });
 
-app.post('/signup', csrfMiddleware, (req, res) => {
+app.post('/signup', authLimiter, csrfMiddleware, (req, res) => {
     const rawUsername = req.body.username || '';
     const rawDisplayName = req.body.displayName || rawUsername;
     const password = req.body.password || '';
@@ -301,8 +430,9 @@ app.post('/signup', csrfMiddleware, (req, res) => {
     if (!username) {
         return res.status(400).send('Username is required and may only contain letters, numbers, underscores, and hyphens.');
     }
-    if (password.length < 6) {
-        return res.status(400).send('Password must be at least 6 characters long.');
+    const { valid: isPasswordValid, message: passwordError } = validatePasswordInput(password);
+    if (!isPasswordValid) {
+        return res.status(400).send(passwordError || 'Password does not meet complexity requirements.');
     }
 
     const store = readUserStore();
@@ -324,7 +454,7 @@ app.post('/signup', csrfMiddleware, (req, res) => {
     return establishSession(req, res, key, () => res.redirect('/'));
 });
 
-app.post('/login', csrfMiddleware, (req, res) => {
+app.post('/login', authLimiter, csrfMiddleware, (req, res) => {
     const rawUsername = req.body.username || '';
     const password = req.body.password || '';
     const username = sanitizeAccountName(rawUsername);
@@ -520,6 +650,7 @@ app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 app.use((err, req, res, next) => {
     console.error('Server error:', err);
+    metricsCollector.recordError(err, { route: req.originalUrl, method: req.method });
 
     if (err && err.code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({ error: 'File too large' });
@@ -539,6 +670,14 @@ app.use((err, req, res, next) => {
 // Authenticate Socket.IO handshakes using the same HTTP cookies as the REST API.
 io.use((socket, next) => {
     try {
+        const forwardedFor = socket.handshake.headers?.['x-forwarded-for'];
+        const ip = forwardedFor ? forwardedFor.split(',')[0].trim() : (socket.handshake.address || socket.request?.connection?.remoteAddress || socket.id);
+        if (!handshakeLimiter.allow(ip)) {
+            metricsCollector.recordSecurityEvent('socket_connection_rate_limit');
+            return next(new Error('Too many connection attempts'));
+        }
+        socket.data.clientIp = ip;
+
         const cookiesHeader = socket.handshake.headers?.cookie || '';
         const parsedCookies = parseCookies(cookiesHeader);
 
@@ -578,12 +717,17 @@ io.use((socket, next) => {
         next();
     } catch (error) {
         console.error('Socket authentication failed:', error);
+        metricsCollector.recordError(error, { transport: 'socket.io', stage: 'handshake' });
         next(new Error('Authentication failed'));
     }
 });
 
 io.on('connection', (socket) => {
     console.log(`A user connected: ${socket.id}`);
+    metricsCollector.incrementSocketConnections();
+    const socketRateLimiter = socketEventRateLimiterFactory();
+    socket.use(socketRateLimiter);
+    instrumentSocketHandlers(socket);
     const identity = socket.data.identity || {};
     const guestSession = identity.guestSession;
     const authUser = identity.user;
@@ -658,6 +802,7 @@ io.on('connection', (socket) => {
         }
         delete players[socket.id];
         io.emit('updateRoomList', getOpenRooms());
+        metricsCollector.decrementSocketConnections();
     });
 });
 
@@ -693,45 +838,34 @@ function getOpenRooms() {
     return openRooms;
 }
 
-function validateDisplayNameInput(name) {
-    if (name === undefined || name === null) {
-        return { value: null, error: 'Display name must contain at least one visible character.' };
-    }
-
-    const normalized = String(name)
-        .replace(/[\r\n]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-    if (!normalized) {
-        return { value: null, error: 'Display name must contain at least one visible character.' };
-    }
-
-    if (normalized.length > 24) {
-        return { value: null, error: 'Display name must be 24 characters or fewer.' };
-    }
-
-    const validCharacters = /^[\p{L}\p{N} _'’.-]+$/u;
-    if (!validCharacters.test(normalized)) {
-        return {
-            value: null,
-            error: 'Display name may only include letters, numbers, spaces, apostrophes, hyphens, or periods.'
+function instrumentSocketHandlers(socket) {
+    const originalOn = socket.on.bind(socket);
+    socket.on = (eventName, handler) => {
+        if (typeof handler !== 'function') {
+            return originalOn(eventName, handler);
+        }
+        const wrapped = async (...args) => {
+            const start = process.hrtime.bigint();
+            try {
+                const result = handler(...args);
+                if (result && typeof result.then === 'function') {
+                    const awaited = await result;
+                    const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+                    metricsCollector.recordSocketEvent({ eventName, durationMs });
+                    return awaited;
+                }
+                const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+                metricsCollector.recordSocketEvent({ eventName, durationMs });
+                return result;
+            } catch (error) {
+                const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+                metricsCollector.recordSocketEvent({ eventName, durationMs, isError: true });
+                metricsCollector.recordError(error, { eventName, transport: 'socket.io' });
+                throw error;
+            }
         };
-    }
-
-    return { value: normalized, error: null };
-}
-
-function sanitizeDisplayName(name) {
-    const { value } = validateDisplayNameInput(name);
-    return value;
-}
-
-function sanitizeAccountName(name) {
-    if (typeof name !== 'string') return null;
-    const cleaned = name.replace(/[^a-zA-Z0-9_-]/g, '');
-    if (!cleaned) return null;
-    return cleaned.slice(0, 24);
+        return originalOn(eventName, wrapped);
+    };
 }
 
 function establishSession(req, res, usernameKey, onSuccess) {
@@ -882,30 +1016,80 @@ function initializeUserStore() {
     if (!fs.existsSync(USER_DATA_FILE)) {
         fs.writeFileSync(USER_DATA_FILE, JSON.stringify({ users: {} }, null, 2));
     }
+    try {
+        const stats = fs.statSync(USER_DATA_FILE);
+        const raw = fs.readFileSync(USER_DATA_FILE, 'utf8');
+        const parsed = JSON.parse(raw);
+        const users = parsed.users && typeof parsed.users === 'object' ? parsed.users : {};
+        userStoreCache = {
+            data: { users },
+            mtime: stats.mtimeMs,
+            expiresAt: Date.now() + USER_STORE_CACHE_TTL_MS,
+        };
+        userStoreIndex = new Map(Object.entries(users));
+    } catch (error) {
+        console.error('Failed to warm user store cache:', error);
+    }
+
+    fs.watchFile(USER_DATA_FILE, { interval: USER_STORE_CACHE_TTL_MS }, () => {
+        userStoreCache = { data: null, mtime: 0, expiresAt: 0 };
+        userStoreIndex = new Map();
+    });
 }
 
 function readUserStore() {
+    const now = Date.now();
+    if (userStoreCache.data && userStoreCache.expiresAt > now) {
+        return userStoreCache.data;
+    }
     try {
+        const stats = fs.statSync(USER_DATA_FILE);
+        if (userStoreCache.data && userStoreCache.mtime === stats.mtimeMs) {
+            userStoreCache.expiresAt = now + USER_STORE_CACHE_TTL_MS;
+            return userStoreCache.data;
+        }
         const raw = fs.readFileSync(USER_DATA_FILE, 'utf8');
         const parsed = JSON.parse(raw);
         if (!parsed.users || typeof parsed.users !== 'object') {
-            return { users: {} };
+            parsed.users = {};
         }
+        userStoreCache = {
+            data: parsed,
+            mtime: stats.mtimeMs,
+            expiresAt: now + USER_STORE_CACHE_TTL_MS,
+        };
+        userStoreIndex = new Map(Object.entries(parsed.users));
         return parsed;
     } catch (error) {
         console.error('Failed to read user store:', error);
+        metricsCollector.recordError(error, { area: 'userStore', action: 'read' });
         return { users: {} };
     }
 }
 
 function writeUserStore(store) {
-    fs.writeFileSync(USER_DATA_FILE, JSON.stringify(store, null, 2));
+    const normalized = { users: store?.users || {} };
+    fs.writeFileSync(USER_DATA_FILE, JSON.stringify(normalized, null, 2));
+    userStoreCache = {
+        data: normalized,
+        mtime: Date.now(),
+        expiresAt: Date.now() + USER_STORE_CACHE_TTL_MS,
+    };
+    userStoreIndex = new Map(Object.entries(normalized.users));
 }
 
 function getUserRecord(usernameKey) {
     if (!usernameKey) return null;
+    const key = String(usernameKey).toLowerCase();
+    if (userStoreIndex.has(key)) {
+        return userStoreIndex.get(key);
+    }
     const store = readUserStore();
-    return store.users[usernameKey.toLowerCase()] || null;
+    const record = store.users[key] || null;
+    if (record) {
+        userStoreIndex.set(key, record);
+    }
+    return record;
 }
 
 function hashPassword(password) {
@@ -1078,4 +1262,4 @@ function extractMultipartFile(buffer, boundary) {
 }
 
 const PORT = process.env.PORT || 8081;
-server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));

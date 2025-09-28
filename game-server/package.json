@@ -5,7 +5,11 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node tests/runAll.js"
+    "test": "node tests/runAll.js",
+    "lint": "node scripts/security-lint.js",
+    "audit": "npm audit --audit-level=high || true",
+    "security:scan": "node scripts/security-scan.js",
+    "benchmark": "node scripts/benchmark.js"
   },
   "dependencies": {
     "connect-session-file": "^1.0.0",
