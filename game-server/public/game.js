@@ -91,28 +91,137 @@ const PROFILE_PROMPT_DISMISSED_KEY = 'homegame.profilePromptDismissed';
 const DEFAULT_AVATAR_PATH = '/images/default-avatar.svg';
 const DEFAULT_GUEST_NAME = 'Guest';
 
-function getCookieValue(name) {
-    const cookieName = `${name}=`;
-    const match = document.cookie
-        .split(';')
-        .map((part) => part.trim())
-        .find((part) => part.startsWith(cookieName));
-    if (!match) {
-        return '';
-    }
-    return decodeURIComponent(match.substring(cookieName.length));
+let csrfToken = '';
+let csrfTokenPromise = null;
+
+function setCsrfToken(token) {
+    csrfToken = token || '';
+    updateCsrfFields(csrfToken);
+    return csrfToken;
 }
 
-function getCsrfToken() {
-    return getCookieValue('homegame.csrf');
+function updateCsrfFields(token) {
+    document.querySelectorAll('input[name="_csrf"]').forEach((field) => {
+        field.value = token || '';
+    });
 }
 
-function withCsrf(headers = {}) {
-    const token = getCsrfToken();
-    if (token) {
-        headers['X-CSRF-Token'] = token;
+async function ensureCsrfToken(force = false) {
+    if (force) {
+        csrfToken = '';
+        csrfTokenPromise = null;
     }
-    return headers;
+
+    if (csrfToken && !force) {
+        return csrfToken;
+    }
+
+    if (!csrfTokenPromise) {
+        csrfTokenPromise = fetch('/api/csrf-token', {
+            credentials: 'include',
+            headers: { Accept: 'application/json' }
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error('Failed to fetch CSRF token.');
+                }
+                return response.json();
+            })
+            .then((data) => {
+                const token = typeof data?.token === 'string' ? data.token : '';
+                setCsrfToken(token);
+                return token;
+            })
+            .catch((error) => {
+                csrfTokenPromise = null;
+                setCsrfToken('');
+                throw error;
+            });
+    }
+
+    try {
+        return await csrfTokenPromise;
+    } finally {
+        if (!csrfToken) {
+            csrfTokenPromise = null;
+        }
+    }
+}
+
+function cloneRequestOptions(init = {}) {
+    const options = { ...init };
+
+    if (init.headers instanceof Headers) {
+        const headers = {};
+        init.headers.forEach((value, key) => {
+            headers[key] = value;
+        });
+        options.headers = headers;
+    } else if (Array.isArray(init.headers)) {
+        options.headers = init.headers.reduce((acc, entry) => {
+            if (Array.isArray(entry) && entry.length >= 2) {
+                const [key, value] = entry;
+                acc[key] = value;
+            }
+            return acc;
+        }, {});
+    } else {
+        options.headers = init.headers ? { ...init.headers } : {};
+    }
+
+    if (init.body instanceof FormData) {
+        const formData = new FormData();
+        init.body.forEach((value, key) => {
+            if (value instanceof File) {
+                formData.append(key, value, value.name);
+            } else {
+                formData.append(key, value);
+            }
+        });
+        options.body = formData;
+    } else {
+        options.body = init.body;
+    }
+
+    return options;
+}
+
+function attachCsrfToken(options, token) {
+    if (!token) {
+        return;
+    }
+
+    if (!options.headers || typeof options.headers !== 'object') {
+        options.headers = {};
+    }
+    options.headers['X-CSRF-Token'] = token;
+
+    if (options.body instanceof FormData) {
+        options.body.set('_csrf', token);
+    }
+}
+
+async function csrfFetch(input, init = {}, { retry = true } = {}) {
+    try {
+        const token = await ensureCsrfToken();
+        const options = cloneRequestOptions(init);
+        attachCsrfToken(options, token);
+        const response = await fetch(input, options);
+        if (response.status === 403 && retry) {
+            await ensureCsrfToken(true);
+            return csrfFetch(input, init, { retry: false });
+        }
+        return response;
+    } catch (error) {
+        if (retry) {
+            try {
+                await ensureCsrfToken(true);
+            } catch (refreshError) {
+                console.warn('Failed to refresh CSRF token.', refreshError);
+            }
+        }
+        throw error;
+    }
 }
 
 let myDisplayName = '';
@@ -135,6 +244,9 @@ const playerColorSwatches = {
 
 initializeIdentity();
 setupProfileEvents();
+ensureCsrfToken().catch((error) => {
+    console.warn('Unable to prefetch CSRF token.', error);
+});
 const storedAvatarPath = readLocalAvatarPath();
 if (storedAvatarPath) {
     setAvatar(storedAvatarPath);
@@ -298,15 +410,21 @@ function storeDisplayName(name) {
     setLocalStorageItem(NAME_STORAGE_KEY, name);
 }
 
-function persistDisplayNameToServer(name) {
+async function persistDisplayNameToServer(name) {
     if (!name) return;
-    fetch('/api/profile', {
-        method: 'POST',
-        headers: withCsrf({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ displayName: name })
-    }).catch((error) => {
+    try {
+        const response = await csrfFetch('/api/profile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ displayName: name })
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || 'Request failed');
+        }
+    } catch (error) {
         console.warn('Unable to persist display name to profile.', error);
-    });
+    }
 }
 
 function readStoredName() {
@@ -322,7 +440,7 @@ function setupProfileEvents() {
     });
     profileEls.signOutBtn?.addEventListener('click', async () => {
         try {
-            await fetch('/logout', { method: 'POST', headers: withCsrf() });
+            await csrfFetch('/logout', { method: 'POST' });
         } catch (error) {
             console.warn('Failed to log out gracefully.', error);
         }
@@ -560,9 +678,8 @@ function handleAvatarSelection(event) {
     const formData = new FormData();
     formData.append('avatar', file);
 
-    fetch('/api/profile/avatar', {
+    csrfFetch('/api/profile/avatar', {
         method: 'POST',
-        headers: withCsrf(),
         body: formData
     })
         .then(async (response) => {
