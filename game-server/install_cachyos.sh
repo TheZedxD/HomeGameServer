@@ -24,7 +24,11 @@ need_pkg npm
 
 echo "[*] Installing Node deps via npm ci..."
 if [ ! -d node_modules ]; then
-  npm ci
+  if ! npm ci; then
+    status=$?
+    echo "[!] npm ci failed (exit code $status). Falling back to npm install..." >&2
+    npm install
+  fi
 else
   echo "[*] node_modules exists; skipping npm ci"
 fi

@@ -34,7 +34,7 @@ This project is a lightweight, self-hosted web server for playing classic multip
     ```
     npm ci
     ```
-    - CachyOS users can run `./install_cachyos.sh` to automatically install Node.js (if needed) and run `npm ci`.
+- CachyOS users can run `./install_cachyos.sh` to automatically install Node.js (if needed) and install project dependencies. The script now falls back to `npm install` if `npm ci` detects an out-of-date lock file so installation succeeds on fresh systems.
 
 ## Running the Server
 
@@ -48,7 +48,7 @@ This project is a lightweight, self-hosted web server for playing classic multip
   npm start
   ```
   The server will listen on `PORT` (defaults to `8081`). Access it at `http://[SERVER-IP-ADDRESS]:8081` or `http://localhost:8081` when running locally.
-- CachyOS users can run `./run_cachyos.sh` to verify dependencies and launch the server automatically.
+- CachyOS users can run `./run_cachyos.sh` to verify dependencies and launch the server automatically. The helper script first tries `npm ci` and automatically retries with `npm install` if the lock file needs to be refreshed.
 
 ## Windows & Linux Shortcuts
 
@@ -56,6 +56,7 @@ This project is a lightweight, self-hosted web server for playing classic multip
 - For a full environment bootstrap, use the cross-platform setup scripts:
   - PowerShell: `./setup.ps1`
   - CachyOS/Linux: `./setup_cachyos.sh`
+    - Automatically retries with `npm install` if `npm ci` fails because the packaged lock file is stale.
 
 ## Security Notes
 
