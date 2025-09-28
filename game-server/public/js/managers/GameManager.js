@@ -83,8 +83,8 @@ export class GameManager {
       });
     });
     this.socket.on('gameStateUpdate', (gameState) => {
-      if (this.gameInstance && this.gameInstance.scene.isActive('CheckersScene')) {
-        this.gameInstance.scene.getScene('CheckersScene').updateGameState(gameState);
+      if (this.gameInstance && typeof this.gameInstance.updateGameState === 'function') {
+        this.gameInstance.updateGameState(gameState);
       }
       if (gameState.score) {
         this.uiManager.updateScoreboardDisplay(gameState.score);
@@ -98,11 +98,8 @@ export class GameManager {
     });
     this.socket.on('roundEnd', ({ winnerColor, winnerName, redScore, blackScore }) => {
       const announcement = `${winnerName || this.formatColorLabel(winnerColor)} wins the round!`;
-      if (this.gameInstance && this.gameInstance.scene.isActive('CheckersScene')) {
-        const scene = this.gameInstance.scene.getScene('CheckersScene');
-        if (scene && typeof scene.showAnnouncement === 'function') {
-          scene.showAnnouncement(announcement);
-        }
+      if (this.gameInstance && typeof this.gameInstance.showAnnouncement === 'function') {
+        this.gameInstance.showAnnouncement(announcement);
       } else {
         this.uiManager.showToast(announcement, 'info');
       }
@@ -168,23 +165,18 @@ export class GameManager {
   }
 
   destroyGameInstance() {
-    if (this.gameInstance) {
-      this.gameInstance.destroy(true);
-      this.gameInstance = null;
+    if (this.gameInstance && typeof this.gameInstance.destroy === 'function') {
+      this.gameInstance.destroy();
     }
+    this.gameInstance = null;
   }
 
   startGame(config) {
     this.destroyGameInstance();
-    const gameConfig = {
-      type: Phaser.AUTO,
-      width: 640,
-      height: 640,
-      parent: 'game-container',
-      backgroundColor: '#0b3d0b',
-      scene: new CheckersScene(config)
-    };
-    this.gameInstance = new Phaser.Game(gameConfig);
+    this.gameInstance = new CheckersScene({ ...config, containerId: 'game-container' });
+    if (typeof this.gameInstance.init === 'function') {
+      this.gameInstance.init();
+    }
   }
 
   syncCurrentPlayersWithRoom(room) {
