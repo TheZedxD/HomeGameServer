@@ -21,7 +21,6 @@ need_pkg() {
 
 need_pkg nodejs
 need_pkg npm
-need_pkg python
 
 echo "[*] Installing Node deps via npm ci..."
 if [ ! -d node_modules ]; then
