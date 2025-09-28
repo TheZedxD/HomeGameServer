@@ -35,6 +35,9 @@ const {
     verifyAccessToken,
 } = require('./lib/authTokens');
 const { parseCookies } = require('./lib/cookies');
+const { createProfileService } = require('./src/profile/profileService');
+const { processAvatar } = require('./src/profile/avatarProcessor');
+const { createSessionMaintenance } = require('./src/sessions/sessionMaintenance');
 
 const app = express();
 const server = http.createServer(app);
@@ -81,6 +84,11 @@ const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
 const SCRYPT_KEY_LENGTH = 64;
 const COOKIE_SECURE = process.env.NODE_ENV === 'production';
 const MAX_UPLOAD_SIZE = 2 * 1024 * 1024; // 2 MB
+const REDIS_URL = process.env.REDIS_URL || null;
+const PROFILE_CACHE_TTL_MS = Number.parseInt(process.env.PROFILE_CACHE_TTL_MS || '15000', 10);
+const PROFILE_CACHE_MAX_ENTRIES = Number.parseInt(process.env.PROFILE_CACHE_MAX_ENTRIES || '2000', 10);
+const AVATAR_MAX_DIMENSION = Number.parseInt(process.env.AVATAR_MAX_DIMENSION || '256', 10);
+const AVATAR_OUTPUT_FORMAT = (process.env.AVATAR_OUTPUT_FORMAT || 'webp').toLowerCase() === 'png' ? 'png' : 'webp';
 const HTTP_BODY_LIMIT = process.env.HTTP_BODY_LIMIT || '256kb';
 const FORM_BODY_LIMIT = process.env.FORM_BODY_LIMIT || '512kb';
 const RATE_LIMIT_WRITE_MAX = Number.parseInt(process.env.RATE_LIMIT_WRITE_MAX || '300', 10);
@@ -94,9 +102,6 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
     .filter(Boolean);
 
 const csrfTokens = new Map();
-const USER_STORE_CACHE_TTL_MS = 5000;
-let userStoreCache = { data: null, mtime: 0, expiresAt: 0 };
-let userStoreIndex = new Map();
 
 function generateLegacyCsrfToken(sessionId) {
     const token = crypto.randomBytes(32).toString('hex');
@@ -144,7 +149,21 @@ function csrfMiddleware(req, res, next) {
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(SESSION_STORE_DIR, { recursive: true });
-initializeUserStore();
+const profileService = createProfileService({
+    dataFile: USER_DATA_FILE,
+    uploadDir: UPLOAD_DIR,
+    cacheTtlMs: PROFILE_CACHE_TTL_MS,
+    cacheOptions: {
+        redisUrl: REDIS_URL,
+        ttlMs: PROFILE_CACHE_TTL_MS,
+        maxEntries: PROFILE_CACHE_MAX_ENTRIES,
+    },
+    analyticsOptions: {
+        redisUrl: REDIS_URL,
+    },
+    logger: console,
+});
+profileService.initialize();
 
 const guestSessionManager = new GuestSessionManager({
     filePath: path.join(DATA_DIR, 'guest-sessions.json'),
@@ -152,9 +171,12 @@ const guestSessionManager = new GuestSessionManager({
     ttl: GUEST_SESSION_TTL_MS,
 });
 
-process.on('exit', () => guestSessionManager.stop());
-process.on('SIGTERM', () => guestSessionManager.stop());
-process.on('SIGINT', () => guestSessionManager.stop());
+process.on('exit', () => { guestSessionManager.stop(); sessionMaintenance.stop(); });
+process.on('SIGTERM', () => { guestSessionManager.stop(); sessionMaintenance.stop(); });
+process.on('SIGINT', () => { guestSessionManager.stop(); sessionMaintenance.stop(); });
+process.on('exit', () => { profileService.shutdown().catch(() => {}); });
+process.on('SIGTERM', () => { profileService.shutdown().catch((error) => console.error('Profile service shutdown error:', error)); });
+process.on('SIGINT', () => { profileService.shutdown().catch((error) => console.error('Profile service shutdown error:', error)); });
 
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
@@ -262,6 +284,13 @@ const sessionMiddleware = session({
 });
 
 app.use(sessionMiddleware);
+
+const sessionMaintenance = createSessionMaintenance({
+    sessionDir: SESSION_STORE_DIR,
+    ttlMs: SESSION_TTL_MS,
+    logger: console,
+});
+sessionMaintenance.start();
 
 app.use((req, res, next) => {
     const guestToken = req.cookies?.[GUEST_COOKIE_NAME];
@@ -424,12 +453,19 @@ app.post('/signup', authLimiter, csrfMiddleware, (req, res) => {
     const password = req.body.password || '';
 
     const username = sanitizeAccountName(rawUsername);
-    const { value: validatedDisplayName } = validateDisplayNameInput(rawDisplayName);
-    const displayName = validatedDisplayName || username;
-
     if (!username) {
         return res.status(400).send('Username is required and may only contain letters, numbers, underscores, and hyphens.');
     }
+
+    const displayNameValidation = validateDisplayNameInput(rawDisplayName, {
+        currentUsername: username,
+        uniquenessCheck: (value) => profileService.ensureDisplayNameAvailability(value, username),
+    });
+    if (displayNameValidation.error) {
+        return res.status(400).send(displayNameValidation.error);
+    }
+    const displayName = displayNameValidation.value || username;
+
     const { valid: isPasswordValid, message: passwordError } = validatePasswordInput(password);
     if (!isPasswordValid) {
         return res.status(400).send(passwordError || 'Password does not meet complexity requirements.');
@@ -442,14 +478,13 @@ app.post('/signup', authLimiter, csrfMiddleware, (req, res) => {
     }
 
     const passwordHash = hashPassword(password);
-    store.users[key] = {
+    profileService.upsert(key, {
         username,
         displayName,
         passwordHash,
         wins: 0,
-        avatarPath: null
-    };
-    writeUserStore(store);
+        avatarPath: null,
+    });
 
     return establishSession(req, res, key, () => res.redirect('/'));
 });
@@ -557,7 +592,10 @@ app.get('/api/profile', requireAuth, (req, res) => {
 
 app.post('/api/profile', requireAuth, csrfMiddleware, (req, res) => {
     const hasDisplayName = Object.prototype.hasOwnProperty.call(req.body, 'displayName');
-    const displayNameValidation = hasDisplayName ? validateDisplayNameInput(req.body.displayName) : { value: null, error: null };
+    const displayNameValidation = hasDisplayName ? validateDisplayNameInput(req.body.displayName, {
+        currentUsername: req.user.username,
+        uniquenessCheck: (value) => profileService.ensureDisplayNameAvailability(value, req.user.username),
+    }) : { value: null, error: null };
     const wins = Number.isFinite(Number(req.body.wins)) ? Math.max(0, Number(req.body.wins)) : undefined;
     const store = readUserStore();
     const userKey = req.user.username.toLowerCase();
@@ -615,7 +653,7 @@ app.post('/api/profile/avatar', requireAuth, csrfMiddleware, (req, res) => {
         chunks.push(chunk);
     });
 
-    req.on('end', () => {
+    req.on('end', async () => {
         if (aborted) return;
         try {
             const buffer = Buffer.concat(chunks);
@@ -624,9 +662,14 @@ app.post('/api/profile/avatar', requireAuth, csrfMiddleware, (req, res) => {
                 return res.status(400).json({ error: 'No file provided.' });
             }
 
+            const processed = await processAvatar(fileInfo.buffer, {
+                maxDimension: AVATAR_MAX_DIMENSION,
+                outputFormat: AVATAR_OUTPUT_FORMAT,
+            });
+
             const timestamp = Date.now();
             const safeBaseName = req.user.username.replace(/[^a-zA-Z0-9_-]/g, '');
-            const finalName = `${safeBaseName || 'avatar'}-${timestamp}${fileInfo.extension}`;
+            const finalName = `${safeBaseName || 'avatar'}-${timestamp}${processed.extension}`;
             const finalPath = path.join(UPLOAD_DIR, finalName);
             const uploadRoot = path.resolve(UPLOAD_DIR);
             const resolvedPath = path.resolve(finalPath);
@@ -635,10 +678,26 @@ app.post('/api/profile/avatar', requireAuth, csrfMiddleware, (req, res) => {
                 throw new Error('Resolved path escapes upload directory.');
             }
 
-            fs.writeFileSync(resolvedPath, fileInfo.buffer, { mode: 0o600 });
+            fs.writeFileSync(resolvedPath, processed.buffer, { mode: 0o600 });
 
             updateUserAvatar(req.user.username.toLowerCase(), `/uploads/profiles/${finalName}`);
-            res.json({ avatarPath: `/uploads/profiles/${finalName}` });
+            profileService.analytics.record('avatarProcessed', {
+                username: req.user.username.toLowerCase(),
+                width: processed.outputWidth,
+                height: processed.outputHeight,
+                format: processed.format,
+            });
+
+            res.json({
+                avatarPath: `/uploads/profiles/${finalName}`,
+                metadata: {
+                    originalWidth: processed.width,
+                    originalHeight: processed.height,
+                    outputWidth: processed.outputWidth,
+                    outputHeight: processed.outputHeight,
+                    format: processed.format,
+                },
+            });
         } catch (error) {
             console.error('Avatar upload failed:', error);
             res.status(400).json({ error: 'Unable to process uploaded file.' });
@@ -748,7 +807,10 @@ io.on('connection', (socket) => {
         if (!players[socket.id]) return;
         const sanitizedAccount = sanitizeAccountName(accountName || '');
         const displayCandidate = displayName || sanitizedAccount || '';
-        const { value: sanitizedDisplay } = validateDisplayNameInput(displayCandidate);
+        const { value: sanitizedDisplay } = validateDisplayNameInput(displayCandidate, {
+            currentUsername: sanitizedAccount,
+            uniquenessCheck: (value) => profileService.ensureDisplayNameAvailability(value, sanitizedAccount),
+        });
         if (sanitizedAccount) {
             players[socket.id].account = sanitizedAccount;
         }
@@ -765,7 +827,10 @@ io.on('connection', (socket) => {
 
     socket.on('setUsername', (rawName) => {
         if (!players[socket.id]) return;
-        const { value: sanitized, error } = validateDisplayNameInput(rawName);
+        const { value: sanitized, error } = validateDisplayNameInput(rawName, {
+            currentUsername: players[socket.id].account,
+            uniquenessCheck: (value) => profileService.ensureDisplayNameAvailability(value, players[socket.id].account),
+        });
         if (sanitized) {
             players[socket.id].username = sanitized;
         } else if (error && !players[socket.id].username) {
@@ -986,7 +1051,10 @@ function applyGuestProgressToUser(usernameKey, guestData) {
     }
 
     if (guestData.displayName && !record.displayName) {
-        const sanitized = sanitizeDisplayName(guestData.displayName);
+        const sanitized = sanitizeDisplayName(guestData.displayName, {
+            currentUsername: usernameKey,
+            uniquenessCheck: (value) => profileService.ensureDisplayNameAvailability(value, usernameKey),
+        });
         if (sanitized) {
             record.displayName = sanitized;
             mutated = true;
@@ -1012,84 +1080,16 @@ function requireAuth(req, res, next) {
     next();
 }
 
-function initializeUserStore() {
-    if (!fs.existsSync(USER_DATA_FILE)) {
-        fs.writeFileSync(USER_DATA_FILE, JSON.stringify({ users: {} }, null, 2));
-    }
-    try {
-        const stats = fs.statSync(USER_DATA_FILE);
-        const raw = fs.readFileSync(USER_DATA_FILE, 'utf8');
-        const parsed = JSON.parse(raw);
-        const users = parsed.users && typeof parsed.users === 'object' ? parsed.users : {};
-        userStoreCache = {
-            data: { users },
-            mtime: stats.mtimeMs,
-            expiresAt: Date.now() + USER_STORE_CACHE_TTL_MS,
-        };
-        userStoreIndex = new Map(Object.entries(users));
-    } catch (error) {
-        console.error('Failed to warm user store cache:', error);
-    }
-
-    fs.watchFile(USER_DATA_FILE, { interval: USER_STORE_CACHE_TTL_MS }, () => {
-        userStoreCache = { data: null, mtime: 0, expiresAt: 0 };
-        userStoreIndex = new Map();
-    });
-}
-
 function readUserStore() {
-    const now = Date.now();
-    if (userStoreCache.data && userStoreCache.expiresAt > now) {
-        return userStoreCache.data;
-    }
-    try {
-        const stats = fs.statSync(USER_DATA_FILE);
-        if (userStoreCache.data && userStoreCache.mtime === stats.mtimeMs) {
-            userStoreCache.expiresAt = now + USER_STORE_CACHE_TTL_MS;
-            return userStoreCache.data;
-        }
-        const raw = fs.readFileSync(USER_DATA_FILE, 'utf8');
-        const parsed = JSON.parse(raw);
-        if (!parsed.users || typeof parsed.users !== 'object') {
-            parsed.users = {};
-        }
-        userStoreCache = {
-            data: parsed,
-            mtime: stats.mtimeMs,
-            expiresAt: now + USER_STORE_CACHE_TTL_MS,
-        };
-        userStoreIndex = new Map(Object.entries(parsed.users));
-        return parsed;
-    } catch (error) {
-        console.error('Failed to read user store:', error);
-        metricsCollector.recordError(error, { area: 'userStore', action: 'read' });
-        return { users: {} };
-    }
+    return profileService.readStore();
 }
 
 function writeUserStore(store) {
-    const normalized = { users: store?.users || {} };
-    fs.writeFileSync(USER_DATA_FILE, JSON.stringify(normalized, null, 2));
-    userStoreCache = {
-        data: normalized,
-        mtime: Date.now(),
-        expiresAt: Date.now() + USER_STORE_CACHE_TTL_MS,
-    };
-    userStoreIndex = new Map(Object.entries(normalized.users));
+    return profileService.writeStore(store);
 }
 
 function getUserRecord(usernameKey) {
-    if (!usernameKey) return null;
-    const key = String(usernameKey).toLowerCase();
-    if (userStoreIndex.has(key)) {
-        return userStoreIndex.get(key);
-    }
-    const store = readUserStore();
-    const record = store.users[key] || null;
-    if (record) {
-        userStoreIndex.set(key, record);
-    }
-    return record;
+    return profileService.getProfile(usernameKey);
 }
 
 function hashPassword(password) {
@@ -1165,19 +1165,13 @@ function verifyAndUpdatePassword(store, usernameKey, password) {
 }
 
 function incrementUserWins(accountName) {
-    const key = accountName.toLowerCase();
-    const store = readUserStore();
-    if (!store.users[key]) return;
-    store.users[key].wins = (store.users[key].wins || 0) + 1;
-    writeUserStore(store);
+    return profileService.incrementWins(accountName);
 }
 
 function updateUserAvatar(usernameKey, avatarPath) {
-    const store = readUserStore();
-    if (!store.users[usernameKey]) return;
-    const existingPath = store.users[usernameKey].avatarPath;
-    if (existingPath && existingPath.startsWith('/uploads/profiles/')) {
-        const absolutePath = path.join(__dirname, 'public', existingPath);
+    const previousPath = profileService.updateAvatar(usernameKey, avatarPath);
+    if (previousPath && previousPath.startsWith('/uploads/profiles/')) {
+        const absolutePath = path.join(__dirname, 'public', previousPath);
         if (fs.existsSync(absolutePath)) {
             try {
                 fs.unlinkSync(absolutePath);
@@ -1186,36 +1180,6 @@ function updateUserAvatar(usernameKey, avatarPath) {
             }
         }
     }
-    store.users[usernameKey].avatarPath = avatarPath;
-    writeUserStore(store);
-}
-
-function detectImageExtension(buffer) {
-    if (!buffer || buffer.length < 4) {
-        return null;
-    }
-
-    if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47 &&
-        buffer[4] === 0x0d && buffer[5] === 0x0a && buffer[6] === 0x1a && buffer[7] === 0x0a) {
-        return '.png';
-    }
-
-    if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
-        const end = buffer.length;
-        if (end >= 2 && buffer[end - 2] === 0xff && buffer[end - 1] === 0xd9) {
-            return '.jpg';
-        }
-    }
-
-    if (buffer.length >= 4 && buffer.toString('ascii', 0, 4) === 'GIF8') {
-        return '.gif';
-    }
-
-    if (buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') {
-        return '.webp';
-    }
-
-    return null;
 }
 
 function extractMultipartFile(buffer, boundary) {
@@ -1253,12 +1217,8 @@ function extractMultipartFile(buffer, boundary) {
     const fileBuffer = buffer.slice(contentStart, fileEnd);
     const filenameMatch = headers.match(/filename="([^"]*)"/i);
     const filename = filenameMatch ? path.basename(filenameMatch[1]) : `upload-${Date.now()}`;
-    const detectedExtension = detectImageExtension(fileBuffer);
-    if (!detectedExtension) {
-        throw new Error(`Unsupported image type for file ${filename}`);
-    }
 
-    return { buffer: fileBuffer, extension: detectedExtension };
+    return { buffer: fileBuffer, filename };
 }
 
 const PORT = process.env.PORT || 8081;
