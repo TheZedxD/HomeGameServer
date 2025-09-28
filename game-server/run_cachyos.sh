@@ -1,51 +1,67 @@
-#!/usr/bin/env bash
-set -Eeuo pipefail
-
-here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-cd "$here"
-
-echo "[*] Using node: $(command -v node || true)"
-echo "[*] Node version: $(node -v 2>/dev/null || echo 'missing')"
-echo "[*] NPM version:  $(npm -v 2>/dev/null || echo 'missing')"
-
-if ! command -v node >/dev/null || ! command -v npm >/dev/null; then
-  echo "[!] Install Node.js and npm (prefer nvm). Aborting."
-  exit 1
+#!/bin/sh
+set -eu
+# shellcheck disable=SC3040
+if command -v set >/dev/null 2>&1; then
+    set -o pipefail 2>/dev/null || true
 fi
 
-# Install deps if needed
-if [ ! -d node_modules ]; then
-  echo "[*] Installing Node deps via npm ci..."
-  npm ci
+script_dir=$(cd "$(dirname "$0")" && pwd)
+cd "$script_dir"
+
+if ! command -v node >/dev/null 2>&1; then
+    echo "[!] Node.js is required but was not found in PATH."
+    exit 1
 fi
 
-# If a sanity script exists, run it; otherwise do a lightweight check
-if npm run | grep -qE '^\s*sanity'; then
-  echo "[*] Running sanity..."
-  npm run sanity
+if ! command -v npm >/dev/null 2>&1; then
+    echo "[!] npm is required but was not found in PATH."
+    exit 1
+fi
+
+echo "[*] Using node: $(command -v node)"
+echo "[*] Node version: $(node -v)"
+echo "[*] NPM version:  $(npm -v)"
+
+if [ -f package-lock.json ]; then
+    echo "[*] Installing dependencies with npm ci..."
+    npm ci
 else
-  echo "[*] Running basic sanity..."
-  node -e "require('./package.json'); console.log('sanity ok')"
+    echo "[*] Installing dependencies with npm install..."
+    npm install
 fi
 
-# Start the app: prefer npm start; else guess a common entry file
-if npm run | grep -qE '^\s*start'; then
-  echo "[*] Starting via npm start..."
-  npm start
-else
-  entry=""
-  for f in server.js index.js app.js dist/server.js dist/index.js; do
-    [ -f "$f" ] && entry="$f" && break
-  done
-  if [ -z "$entry" ]; then
-    # Try package.json "main"
-    entry="$(node -e "try{console.log(require('./package.json').main||'')}catch(e){process.exit(0)}")"
-  fi
-  if [ -n "$entry" ] && [ -f "$entry" ]; then
+start_script=$(npm pkg get scripts.start 2>/dev/null || printf 'undefined')
+case "$start_script" in
+    undefined|"undefined")
+        has_start=false
+        ;;
+    *)
+        has_start=true
+        ;;
+esac
+
+if [ "$has_start" = true ]; then
+    echo "[*] Starting via npm start..."
+    npm start
+    exit $?
+fi
+
+entry=""
+for candidate in server.js index.js app.js dist/server.js dist/index.js; do
+    if [ -f "$candidate" ]; then
+        entry=$candidate
+        break
+    fi
+done
+
+if [ -z "$entry" ]; then
+    entry=$(node -e 'try{console.log(require("./package.json").main||"")}catch(e){process.exit(0)}') || entry=""
+fi
+
+if [ -n "$entry" ] && [ -f "$entry" ]; then
     echo "[*] Starting via node $entry ..."
     exec node "$entry"
-  else
-    echo "[!] No start script and no entry file found. Add \"start\" to package.json or create server.js."
-    exit 1
-  fi
 fi
+
+echo "[!] No start script and no entry file found. Add \"start\" to package.json or create server.js."
+exit 1

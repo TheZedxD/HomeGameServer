@@ -6,9 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "test": "node tests/runAll.js",
-    "lint": "node scripts/security-lint.js",
+    "lint": "node scripts/security-lint.js --eslint-only",
     "audit": "npm audit --audit-level=high || true",
-    "security:scan": "node scripts/security-scan.js",
+    "security:scan": "node scripts/security-lint.js --audit-only",
     "benchmark": "node scripts/benchmark.js"
   },
   "dependencies": {

@@ -1,41 +1,210 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create a Game Hub Account</title>
-    <link rel="stylesheet" href="/style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Create your HomeGame account</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(160deg, #121826, #1f2937);
+      color: #f8fafc;
+    }
+
+    main {
+      background: rgba(17, 24, 39, 0.92);
+      border-radius: 12px;
+      padding: 34px 30px;
+      width: min(460px, 94vw);
+      box-shadow: 0 20px 38px rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+
+    h1 {
+      margin: 0 0 0.4em;
+      font-size: 1.7rem;
+    }
+
+    p.description {
+      margin: 0 0 1.75em;
+      font-size: 0.95rem;
+      color: #d1d5f5;
+    }
+
+    form {
+      display: grid;
+      gap: 18px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.95rem;
+      margin-bottom: 6px;
+      color: #e2e8f0;
+    }
+
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.45);
+      background: rgba(17, 24, 39, 0.75);
+      color: inherit;
+      font-size: 1rem;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    input[type="text"]:focus,
+    input[type="password"]:focus {
+      outline: none;
+      border-color: #a855f7;
+      box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.25);
+    }
+
+    small.help-text {
+      display: block;
+      margin-top: 4px;
+      font-size: 0.8rem;
+      color: #cbd5f5;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    button {
+      appearance: none;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 20px;
+      font-weight: 600;
+      font-size: 1rem;
+      cursor: pointer;
+      color: #0f172a;
+      background: linear-gradient(135deg, #a855f7, #38bdf8);
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    button:hover,
+    button:focus-visible {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 26px rgba(168, 85, 247, 0.28);
+      outline: none;
+    }
+
+    a.alt-link {
+      font-size: 0.95rem;
+      color: #93c5fd;
+      text-decoration: none;
+    }
+
+    a.alt-link:hover,
+    a.alt-link:focus-visible {
+      text-decoration: underline;
+    }
+
+    .status-message {
+      font-size: 0.9rem;
+      margin: -4px 0 4px;
+      color: #fda4af;
+    }
+  </style>
 </head>
-<body class="auth-body">
-    <a class="skip-link" href="#signup-title">Skip to signup form</a>
-    <main class="auth-window window classic-raised win2k-window">
-        <div class="title-bar">
-            <span class="title-bar-text">Create Account</span>
-        </div>
-        <form class="window-body auth-form" action="/signup" method="POST" aria-labelledby="signup-title">
-            <h1 id="signup-title" class="auth-title">Join the Game Hub</h1>
-            <p class="auth-subtitle">Create your profile to start playing and tracking your wins.</p>
-
-            <div class="form-errors hidden" role="alert" aria-live="assertive"></div>
-
-            <label for="signup-username" class="input-label">Username</label>
-            <input id="signup-username" name="username" class="input-field" type="text" autocomplete="username" required maxlength="24" aria-describedby="username-help">
-            <small id="username-help" class="help-text">Letters, numbers, hyphens, and underscores only.</small>
-
-            <label for="signup-display-name" class="input-label">Display Name</label>
-            <input id="signup-display-name" name="displayName" class="input-field" type="text" maxlength="24" placeholder="Shown to other players">
-
-            <label for="signup-password" class="input-label">Password</label>
-            <input id="signup-password" name="password" class="input-field" type="password" autocomplete="new-password" required minlength="6">
-
-            <input type="hidden" name="_csrf" id="csrf-token">
-
-            <div class="auth-actions">
-                <button type="submit" class="btn btn-primary">Sign Up</button>
-                <a href="/login" class="btn" role="button">Back to Login</a>
-            </div>
-        </form>
-    </main>
-    <script type="module" src="/js/pages/auth.js"></script>
+<body>
+  <main>
+    <h1>Create your account</h1>
+    <p class="description">Choose a username and secure password to set up your HomeGame profile.</p>
+    <p id="form-status" class="status-message" role="alert" hidden></p>
+    <form action="/signup" method="POST" novalidate>
+      <div>
+        <label for="signup-username">Username</label>
+        <input
+          id="signup-username"
+          name="username"
+          type="text"
+          inputmode="text"
+          pattern="[A-Za-z0-9_-]+"
+          autocomplete="username"
+          maxlength="24"
+          required
+        />
+        <small class="help-text">Letters, numbers, hyphens, and underscores only.</small>
+      </div>
+      <div>
+        <label for="signup-displayName">Display name</label>
+        <input
+          id="signup-displayName"
+          name="displayName"
+          type="text"
+          maxlength="32"
+          autocomplete="nickname"
+          placeholder="Shown to other players"
+        />
+      </div>
+      <div>
+        <label for="signup-password">Password</label>
+        <input
+          id="signup-password"
+          name="password"
+          type="password"
+          autocomplete="new-password"
+          minlength="6"
+          required
+        />
+      </div>
+      <input type="hidden" name="_csrf" value="" />
+      <div class="actions">
+        <button type="submit">Sign Up</button>
+        <a class="alt-link" href="/login">Back to login</a>
+      </div>
+    </form>
+  </main>
+  <script>
+    (function () {
+      const status = document.getElementById('form-status');
+      const csrfField = document.querySelector('input[name="_csrf"]');
+      if (!csrfField) {
+        return;
+      }
+      fetch('/api/csrf-token', {
+        credentials: 'include',
+        headers: { Accept: 'application/json' }
+      })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error('CSRF token request failed');
+          }
+          return response.json();
+        })
+        .then((data) => {
+          const token = (data && (data.token || data.doubleSubmitToken)) || '';
+          if (!token) {
+            throw new Error('Missing CSRF token in response');
+          }
+          csrfField.value = token;
+        })
+        .catch((error) => {
+          console.error(error);
+          if (status) {
+            status.textContent = 'Unable to retrieve a security token. Refresh and try again.';
+            status.hidden = false;
+          }
+        });
+    })();
+  </script>
 </body>
 </html>
