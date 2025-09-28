@@ -7,7 +7,8 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="profile-corner classic-raised" id="profile-corner" role="region" aria-label="Player profile" tabindex="0">
+    <a class="skip-link" href="#main-lobby">Skip to lobby content</a>
+    <div class="profile-corner classic-raised win2k-window win2k-window--floating" id="profile-corner" role="region" aria-label="Player profile" tabindex="0">
         <img id="profile-avatar" src="/images/default-avatar.svg" alt="Player avatar" class="profile-avatar">
         <div class="profile-stats">
             <div class="profile-name" id="profile-display-name">Guest</div>
@@ -38,6 +39,11 @@
                 </div>
                 <div class="window-body">
                     <p class="intro-text">A lightweight, local-first platform for classic games with authentic Windows 2000 styling.</p>
+                    <nav class="win2k-nav" aria-label="Primary">
+                        <div class="win2k-nav__item"><a class="win2k-nav__link" href="#main-lobby" aria-current="page">Lobby</a></div>
+                        <div class="win2k-nav__item"><a class="win2k-nav__link" href="#match-lobby">Match Setup</a></div>
+                        <div class="win2k-nav__item"><a class="win2k-nav__link" href="#game-ui">Game Session</a></div>
+                    </nav>
                 </div>
             </div>
         </header>
@@ -128,7 +134,10 @@
                     <div id="scoreboard" class="scoreboard classic-raised hidden" aria-live="polite">
                         <p id="score-text">Red: 0 – Black: 0</p>
                     </div>
-                    <div id="game-container" class="classic-sunken" role="application" aria-label="Game board"></div>
+                    <div class="game-stage" data-component="game-board">
+                        <div id="game-container" class="classic-sunken" role="application" aria-label="Game board"></div>
+                        <p class="game-stage__meta">The board adapts automatically to your screen size.</p>
+                    </div>
                     <div class="match-controls" aria-label="Game actions">
                         <button id="exit-to-menu-btn" class="btn" type="button">Exit to Menu</button>
                     </div>
@@ -198,6 +207,11 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <div id="global-loading" class="win2k-loading hidden" role="status" aria-live="polite">
+        <span class="win2k-loading__bar" aria-hidden="true"></span>
+        <span>Loading game assets…</span>
     </div>
 
     <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="false"></div>
