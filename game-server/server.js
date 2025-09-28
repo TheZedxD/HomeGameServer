@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const session = require('express-session');
-const createFileStore = require('connect-session-file');
+const FileStore = require('session-file-store')(session);
 const { Server } = require('socket.io');
 const { createModularGameServer } = require('./src/server/gameGateway');
 
@@ -72,8 +72,9 @@ const DATA_DIR = path.join(__dirname, 'data');
 const USER_DATA_FILE = path.join(DATA_DIR, 'users.json');
 const UPLOAD_DIR = path.join(__dirname, 'public/uploads/profiles');
 const SESSION_COOKIE_NAME = 'homegame.sid';
-const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
-const SESSION_STORE_DIR = path.join(DATA_DIR, 'sessions');
+const SESSION_TTL_SECONDS = 60 * 60 * 24; // 1 day
+const SESSION_TTL_MS = SESSION_TTL_SECONDS * 1000;
+const SESSION_STORE_DIR = path.join(__dirname, '.sessions');
 const SESSION_SECRET = process.env.SESSION_SECRET || 'homegame_session_secret';
 const JWT_SECRET = process.env.JWT_SECRET || 'homegame_jwt_secret';
 const GUEST_SESSION_SECRET = process.env.GUEST_SESSION_SECRET || `${SESSION_SECRET}-guest`;
@@ -254,23 +255,13 @@ app.use((req, res, next) => {
     next();
 });
 
-const resolvedStoreFactory = typeof createFileStore === 'function'
-    ? createFileStore(session)
-    : null;
-const FileStore = typeof resolvedStoreFactory === 'function'
-    ? resolvedStoreFactory
-    : createFileStore;
-
-if (typeof FileStore !== 'function') {
-    throw new Error('connect-session-file did not provide a valid session store constructor.');
-}
-
 const sessionMiddleware = session({
     name: SESSION_COOKIE_NAME,
     secret: SESSION_SECRET,
     store: new FileStore({
         path: SESSION_STORE_DIR,
-        ttl: Math.floor(SESSION_TTL_MS / 1000)
+        retries: 0,
+        ttl: SESSION_TTL_SECONDS,
     }),
     resave: false,
     saveUninitialized: false,

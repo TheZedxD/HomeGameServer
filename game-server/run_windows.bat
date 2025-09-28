@@ -3,7 +3,6 @@ setlocal enabledelayedexpansion
 
 where node >nul 2>nul || (echo Node.js not found in PATH & pause & exit /b 1)
 where npm  >nul 2>nul || (echo npm not found in PATH & pause & exit /b 1)
-where python >nul 2>nul || (echo Python not found in PATH & pause & exit /b 1)
 
 if exist package-lock.json (
   set "INSTALL_CMD=npm ci"
