@@ -91,6 +91,30 @@ const PROFILE_PROMPT_DISMISSED_KEY = 'homegame.profilePromptDismissed';
 const DEFAULT_AVATAR_PATH = '/images/default-avatar.svg';
 const DEFAULT_GUEST_NAME = 'Guest';
 
+function getCookieValue(name) {
+    const cookieName = `${name}=`;
+    const match = document.cookie
+        .split(';')
+        .map((part) => part.trim())
+        .find((part) => part.startsWith(cookieName));
+    if (!match) {
+        return '';
+    }
+    return decodeURIComponent(match.substring(cookieName.length));
+}
+
+function getCsrfToken() {
+    return getCookieValue('homegame.csrf');
+}
+
+function withCsrf(headers = {}) {
+    const token = getCsrfToken();
+    if (token) {
+        headers['X-CSRF-Token'] = token;
+    }
+    return headers;
+}
+
 let myDisplayName = '';
 let currentPlayers = null;
 let playerLabels = { red: 'Red', black: 'Black' };
@@ -269,7 +293,7 @@ function persistDisplayNameToServer(name) {
     if (!name) return;
     fetch('/api/profile', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withCsrf({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ displayName: name })
     }).catch((error) => {
         console.warn('Unable to persist display name to profile.', error);
@@ -295,7 +319,7 @@ function setupProfileEvents() {
     });
     profileEls.signOutBtn?.addEventListener('click', async () => {
         try {
-            await fetch('/logout', { method: 'POST' });
+            await fetch('/logout', { method: 'POST', headers: withCsrf() });
         } catch (error) {
             console.warn('Failed to log out gracefully.', error);
         }
@@ -490,6 +514,7 @@ function handleAvatarSelection(event) {
 
     fetch('/api/profile/avatar', {
         method: 'POST',
+        headers: withCsrf(),
         body: formData
     })
         .then(async (response) => {
