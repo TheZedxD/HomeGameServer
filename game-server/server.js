@@ -252,7 +252,8 @@ app.post('/signup', csrfMiddleware, (req, res) => {
     const password = req.body.password || '';
 
     const username = sanitizeAccountName(rawUsername);
-    const displayName = sanitizeDisplayName(rawDisplayName);
+    const { value: validatedDisplayName } = validateDisplayNameInput(rawDisplayName);
+    const displayName = validatedDisplayName || username;
 
     if (!username) {
         return res.status(400).send('Username is required and may only contain letters, numbers, underscores, and hyphens.');
@@ -350,7 +351,8 @@ app.get('/api/profile', requireAuth, (req, res) => {
 });
 
 app.post('/api/profile', requireAuth, csrfMiddleware, (req, res) => {
-    const displayName = sanitizeDisplayName(req.body.displayName || '');
+    const hasDisplayName = Object.prototype.hasOwnProperty.call(req.body, 'displayName');
+    const displayNameValidation = hasDisplayName ? validateDisplayNameInput(req.body.displayName) : { value: null, error: null };
     const wins = Number.isFinite(Number(req.body.wins)) ? Math.max(0, Number(req.body.wins)) : undefined;
     const store = readUserStore();
     const userKey = req.session.username;
@@ -359,8 +361,12 @@ app.post('/api/profile', requireAuth, csrfMiddleware, (req, res) => {
         return res.status(404).json({ error: 'Profile not found.' });
     }
 
-    if (displayName) {
-        userRecord.displayName = displayName;
+    if (displayNameValidation.error) {
+        return res.status(400).json({ error: displayNameValidation.error });
+    }
+
+    if (hasDisplayName && displayNameValidation.value) {
+        userRecord.displayName = displayNameValidation.value;
     }
     if (wins !== undefined) {
         userRecord.wins = wins;
@@ -445,20 +451,27 @@ io.on('connection', (socket) => {
     socket.on('linkAccount', ({ accountName, displayName }) => {
         if (!players[socket.id]) return;
         const sanitizedAccount = sanitizeAccountName(accountName || '');
-        const sanitizedDisplay = sanitizeDisplayName(displayName || sanitizedAccount);
+        const displayCandidate = displayName || sanitizedAccount || '';
+        const { value: sanitizedDisplay } = validateDisplayNameInput(displayCandidate);
         if (sanitizedAccount) {
             players[socket.id].account = sanitizedAccount;
         }
         if (sanitizedDisplay) {
             players[socket.id].username = sanitizedDisplay;
+        } else if (sanitizedAccount) {
+            players[socket.id].username = sanitizedAccount;
         }
         syncPlayerInRoom(socket.id);
     });
 
     socket.on('setUsername', (rawName) => {
         if (!players[socket.id]) return;
-        const sanitized = sanitizeDisplayName(rawName);
-        players[socket.id].username = sanitized;
+        const { value: sanitized, error } = validateDisplayNameInput(rawName);
+        if (sanitized) {
+            players[socket.id].username = sanitized;
+        } else if (error && !players[socket.id].username) {
+            players[socket.id].username = 'Guest';
+        }
         syncPlayerInRoom(socket.id);
     });
 
@@ -705,11 +718,38 @@ function getOpenRooms() {
     return openRooms;
 }
 
+function validateDisplayNameInput(name) {
+    if (name === undefined || name === null) {
+        return { value: null, error: 'Display name must contain at least one visible character.' };
+    }
+
+    const normalized = String(name)
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!normalized) {
+        return { value: null, error: 'Display name must contain at least one visible character.' };
+    }
+
+    if (normalized.length > 24) {
+        return { value: null, error: 'Display name must be 24 characters or fewer.' };
+    }
+
+    const validCharacters = /^[\p{L}\p{N} _'’.-]+$/u;
+    if (!validCharacters.test(normalized)) {
+        return {
+            value: null,
+            error: 'Display name may only include letters, numbers, spaces, apostrophes, hyphens, or periods.'
+        };
+    }
+
+    return { value: normalized, error: null };
+}
+
 function sanitizeDisplayName(name) {
-    if (typeof name !== 'string') return null;
-    const trimmed = name.replace(/\s+/g, ' ').trim();
-    if (!trimmed) return null;
-    return trimmed.slice(0, 24);
+    const { value } = validateDisplayNameInput(name);
+    return value;
 }
 
 function sanitizeAccountName(name) {
