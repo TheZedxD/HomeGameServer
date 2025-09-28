@@ -224,11 +224,169 @@ async function csrfFetch(input, init = {}, { retry = true } = {}) {
     }
 }
 
-let myDisplayName = '';
+class ProfileManager {
+    constructor() {
+        this.profile = this.getGuestProfile();
+        this.observers = [];
+    }
+
+    sanitizeName(rawName) {
+        if (rawName === null || rawName === undefined) return '';
+        return String(rawName)
+            .replace(/[\r\n]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    validateDisplayName(rawName) {
+        const sanitized = this.sanitizeName(rawName);
+        if (!sanitized) {
+            return { valid: false, message: 'Display name must contain at least one visible character.' };
+        }
+        if (sanitized.length > 24) {
+            return { valid: false, message: 'Display name must be 24 characters or fewer.' };
+        }
+        const validCharacters = /^[\p{L}\p{N} _'’.-]+$/u;
+        if (!validCharacters.test(sanitized)) {
+            return { valid: false, message: 'Display name contains unsupported characters.' };
+        }
+        return { valid: true, value: sanitized };
+    }
+
+    getStoredDisplayName() {
+        return this.sanitizeName(getLocalStorageItem(NAME_STORAGE_KEY) || '').slice(0, 24);
+    }
+
+    storeDisplayName(name) {
+        if (!name) {
+            removeLocalStorageItem(NAME_STORAGE_KEY);
+            return;
+        }
+        setLocalStorageItem(NAME_STORAGE_KEY, name);
+    }
+
+    getStoredAvatarPath() {
+        return getLocalStorageItem(AVATAR_STORAGE_KEY);
+    }
+
+    clearStoredAvatarPath() {
+        removeLocalStorageItem(AVATAR_STORAGE_KEY);
+    }
+
+    normalizeProfile(rawProfile, { isGuest = false } = {}) {
+        if (!rawProfile) {
+            return this.getGuestProfile();
+        }
+
+        const username = this.sanitizeName(rawProfile.username || '').slice(0, 24) || DEFAULT_GUEST_NAME;
+        const fallbackDisplayName = isGuest ? username || DEFAULT_GUEST_NAME : username;
+        const displayName = this.sanitizeName(rawProfile.displayName || fallbackDisplayName).slice(0, 24) || DEFAULT_GUEST_NAME;
+        const wins = Number(rawProfile.wins);
+
+        return {
+            isGuest,
+            username: isGuest ? DEFAULT_GUEST_NAME : username,
+            displayName,
+            wins: Number.isFinite(wins) ? Math.max(0, Math.floor(wins)) : 0,
+            avatarPath: rawProfile.avatarPath || null
+        };
+    }
+
+    getGuestProfile() {
+        const storedName = this.getStoredDisplayName();
+        return {
+            isGuest: true,
+            username: DEFAULT_GUEST_NAME,
+            displayName: storedName || DEFAULT_GUEST_NAME,
+            wins: 0,
+            avatarPath: this.getStoredAvatarPath()
+        };
+    }
+
+    async loadProfile() {
+        try {
+            const response = await fetch('/api/session', { headers: { Accept: 'application/json' } });
+            if (!response.ok) {
+                throw new Error('Unable to load profile.');
+            }
+            const data = await response.json();
+            if (data?.authenticated && data.user) {
+                this.profile = this.normalizeProfile(data.user, { isGuest: false });
+                this.storeDisplayName(this.profile.displayName);
+            } else {
+                this.profile = this.getGuestProfile();
+            }
+        } catch (error) {
+            console.warn('Failed to load session profile.', error);
+            if (!this.profile || !this.profile.isGuest) {
+                this.profile = this.getGuestProfile();
+            }
+        }
+
+        this.notifyObservers();
+        return this.profile;
+    }
+
+    async updateDisplayName(name) {
+        const validation = this.validateDisplayName(name);
+        if (!validation.valid) {
+            return { success: false, error: validation.message };
+        }
+
+        const sanitized = validation.value;
+        if (!this.profile) {
+            this.profile = this.getGuestProfile();
+        }
+
+        this.profile.displayName = sanitized;
+        this.storeDisplayName(sanitized);
+        this.notifyObservers();
+
+        if (!this.profile.isGuest) {
+            try {
+                const response = await csrfFetch('/api/profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ displayName: sanitized })
+                });
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || 'Request failed');
+                }
+            } catch (error) {
+                console.warn('Failed to save to server:', error);
+                return {
+                    success: true,
+                    warning: 'Saved locally, but syncing with the server failed. Please try again later.'
+                };
+            }
+        }
+
+        return { success: true };
+    }
+
+    subscribe(callback) {
+        if (typeof callback === 'function') {
+            this.observers.push(callback);
+        }
+    }
+
+    notifyObservers() {
+        this.observers.forEach((callback) => {
+            try {
+                callback(this.profile);
+            } catch (error) {
+                console.warn('Profile observer failed.', error);
+            }
+        });
+    }
+}
+
+const profileManager = new ProfileManager();
+
 let currentPlayers = null;
 let playerLabels = { red: 'Red', black: 'Black' };
 let latestScore = { red: 0, black: 0 };
-let sessionProfile = null;
 
 // --- Available Games Data ---
 // This array makes it easy to add more games in the future.
@@ -242,18 +400,35 @@ const playerColorSwatches = {
     black: '#f5f5dc'
 };
 
-initializeIdentity();
 setupProfileEvents();
+initializeIdentityControls();
 ensureCsrfToken().catch((error) => {
     console.warn('Unable to prefetch CSRF token.', error);
 });
-const storedAvatarPath = readLocalAvatarPath();
+const storedAvatarPath = profileManager.getStoredAvatarPath();
 if (storedAvatarPath) {
     setAvatar(storedAvatarPath);
 }
 initializeServiceWorker();
-bootstrapProfile();
 initializeModalDismissal();
+
+profileManager.subscribe((profile) => {
+    updateProfileCorner(profile);
+    updateNamePreview(profile.displayName);
+    updateGamePlayerLabels(profile);
+    syncProfileWithSocket(profile);
+    toggleProfileActions({ authenticated: !profile.isGuest });
+    maybeShowProfilePrompt(profile);
+    if (identityEls.input) {
+        identityEls.input.value = profile.displayName || '';
+    }
+    if (displayNameInput) {
+        displayNameInput.value = profile.displayName || '';
+    }
+});
+
+profileManager.notifyObservers();
+profileManager.loadProfile();
 
 // --- UI State Management ---
 // A simple function to switch between the main UI views.
@@ -269,42 +444,49 @@ function showUI(activeUI) {
     }
 }
 
-function initializeIdentity() {
-    const storedName = sanitizeName(readStoredName()).slice(0, 24);
+function initializeIdentityControls() {
+    const storedName = profileManager.getStoredDisplayName();
     if (storedName) {
-        myDisplayName = storedName;
-        updateNamePreview(myDisplayName);
+        updateNamePreview(storedName);
+        if (identityEls.input) {
+            identityEls.input.value = storedName;
+        }
+        if (displayNameInput) {
+            displayNameInput.value = storedName;
+        }
     } else {
         updateNamePreview(DEFAULT_GUEST_NAME);
     }
 
-    if (identityEls.input) {
-        identityEls.input.value = myDisplayName || '';
-    }
-    if (displayNameInput) {
-        displayNameInput.value = myDisplayName || '';
-    }
+    identityEls.saveBtn?.addEventListener('click', () => {
+        const rawValue = identityEls.input?.value ?? '';
+        handleDisplayNameChange(rawValue, { showStatus: true });
+    });
 
-    identityEls.saveBtn?.addEventListener('click', submitDisplayName);
     identityEls.input?.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
             event.preventDefault();
-            submitDisplayName();
+            const rawValue = identityEls.input.value;
+            handleDisplayNameChange(rawValue, { showStatus: true });
         }
     });
+
     identityEls.input?.addEventListener('input', clearNameStatus);
 
     if (saveDisplayNameBtn) {
-        saveDisplayNameBtn.addEventListener('click', saveAndEmitDisplayName);
-    }
-    if (displayNameInput) {
-        displayNameInput.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter') {
-                event.preventDefault();
-                saveAndEmitDisplayName();
-            }
+        saveDisplayNameBtn.addEventListener('click', () => {
+            const rawValue = displayNameInput?.value ?? '';
+            handleDisplayNameChange(rawValue, { showStatus: false });
         });
     }
+
+    displayNameInput?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            const rawValue = displayNameInput.value;
+            handleDisplayNameChange(rawValue, { showStatus: false });
+        }
+    });
 }
 
 function initializeModalDismissal() {
@@ -320,66 +502,29 @@ function initializeModalDismissal() {
     });
 }
 
-function sanitizeName(rawName) {
-    if (rawName === null || rawName === undefined) return '';
-    return String(rawName).replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function submitDisplayName() {
-    if (!identityEls.input) return;
-    const result = applyDisplayName(identityEls.input.value, { showStatus: true });
-    if (result) {
-        showNameStatus('Name saved!', 'success');
-    }
-}
-
-function saveAndEmitDisplayName() {
-    const raw = displayNameInput?.value ?? '';
-    applyDisplayName(raw, { showStatus: false });
-}
-
-function applyDisplayName(rawValue, { showStatus = true, persist = true, updateSession = true, syncSocket = true } = {}) {
-    const sanitized = sanitizeName(rawValue).slice(0, 24);
-    if (!sanitized) {
+async function handleDisplayNameChange(rawValue, { showStatus = false } = {}) {
+    const result = await profileManager.updateDisplayName(rawValue);
+    if (!result.success) {
+        const message = result.error || 'Unable to update display name. Please try again.';
         if (showStatus) {
-            showNameStatus('Please enter a name with at least one character.', 'error');
+            showNameStatus(message, 'error');
+        } else {
+            showToast(message, 'error');
         }
-        return null;
+        return false;
     }
 
-    myDisplayName = sanitized;
-    if (identityEls.input) {
-        identityEls.input.value = sanitized;
-    }
-    if (displayNameInput) {
-        displayNameInput.value = sanitized;
-    }
-    updateNamePreview(sanitized);
-    storeDisplayName(sanitized);
-    if (persist) {
-        persistDisplayNameToServer(sanitized);
-    }
-    if (updateSession && sessionProfile) {
-        sessionProfile.displayName = sanitized;
+    if (showStatus) {
+        showNameStatus('Name saved!', 'success');
+    } else if (!result.warning) {
+        showToast('Display name updated.', 'success');
     }
 
-    if (socket.connected && syncSocket) {
-        socket.emit('setUsername', sanitized);
-        if (sessionProfile) {
-            socket.emit('linkAccount', {
-                accountName: sessionProfile.username,
-                displayName: sanitized
-            });
-        }
+    if (result.warning) {
+        showToast(result.warning, 'warning', { duration: 6000 });
     }
 
-    if (currentPlayers && myPlayerId && currentPlayers[myPlayerId]) {
-        currentPlayers[myPlayerId].username = sanitized;
-        refreshPlayerLabels();
-        updateScoreboardDisplay(latestScore);
-    }
-
-    return sanitized;
+    return true;
 }
 
 function updateNamePreview(name) {
@@ -400,35 +545,6 @@ function clearNameStatus() {
     identityEls.status.classList.add('hidden');
     identityEls.status.textContent = '';
     identityEls.status.classList.remove('success', 'error');
-}
-
-function storeDisplayName(name) {
-    if (!name) {
-        removeLocalStorageItem(NAME_STORAGE_KEY);
-        return;
-    }
-    setLocalStorageItem(NAME_STORAGE_KEY, name);
-}
-
-async function persistDisplayNameToServer(name) {
-    if (!name) return;
-    try {
-        const response = await csrfFetch('/api/profile', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ displayName: name })
-        });
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(errorText || 'Request failed');
-        }
-    } catch (error) {
-        console.warn('Unable to persist display name to profile.', error);
-    }
-}
-
-function readStoredName() {
-    return getLocalStorageItem(NAME_STORAGE_KEY) || '';
 }
 
 function setupProfileEvents() {
@@ -504,87 +620,6 @@ async function handleServiceWorkerReady() {
     setLocalStorageItem(INSTALL_FLAG_KEY, 'true');
 }
 
-function bootstrapProfile() {
-    loadSessionProfile();
-}
-
-function normalizeSessionProfile(profile) {
-    if (!profile) return null;
-    const username = sanitizeName(profile.username || '') || DEFAULT_GUEST_NAME;
-    const displayName = sanitizeName(profile.displayName || username) || DEFAULT_GUEST_NAME;
-    const wins = Number(profile.wins);
-    return {
-        username,
-        displayName,
-        wins: Number.isFinite(wins) ? Math.max(0, Math.floor(wins)) : 0,
-        avatarPath: profile.avatarPath || null
-    };
-}
-
-function setSessionProfile(profile) {
-    sessionProfile = profile ? normalizeSessionProfile(profile) : null;
-    return sessionProfile;
-}
-
-function linkSocketWithProfile(profile) {
-    if (!profile || !socket.connected) return;
-    socket.emit('linkAccount', {
-        accountName: profile.username,
-        displayName: profile.displayName
-    });
-}
-
-function handleAuthenticatedSession(rawProfile) {
-    const normalized = setSessionProfile(rawProfile);
-    if (!normalized) {
-        handleUnauthenticated();
-        return;
-    }
-    toggleProfileActions({ authenticated: true });
-    applyDisplayName(normalized.displayName, {
-        showStatus: false,
-        persist: false,
-        updateSession: false,
-        syncSocket: false
-    });
-    updateProfileUI(normalized);
-    maybeShowProfilePrompt(normalized);
-    linkSocketWithProfile(normalized);
-}
-
-async function loadSessionProfile() {
-    try {
-        const response = await fetch('/api/session', { headers: { 'Accept': 'application/json' } });
-        if (!response.ok) {
-            throw new Error('Unable to load profile.');
-        }
-        const data = await response.json();
-        if (!data.authenticated) {
-            handleUnauthenticated();
-            return;
-        }
-        handleAuthenticatedSession(data.user);
-    } catch (error) {
-        console.warn('Failed to load session profile.', error);
-        handleUnauthenticated();
-    }
-}
-
-function handleUnauthenticated() {
-    setSessionProfile(null);
-    toggleProfileActions({ authenticated: false });
-    const fallbackName = sanitizeName(readStoredName()) || DEFAULT_GUEST_NAME;
-    applyDisplayName(fallbackName, {
-        showStatus: false,
-        persist: false,
-        updateSession: false,
-        syncSocket: false
-    });
-    clearLocalAvatarPath();
-    updateProfileUI({ username: DEFAULT_GUEST_NAME, displayName: fallbackName, wins: 0, avatarPath: null });
-    hideProfilePrompt(false);
-}
-
 function toggleProfileActions({ authenticated }) {
     if (!profileEls.signInBtn || !profileEls.signOutBtn) return;
     if (authenticated) {
@@ -596,28 +631,51 @@ function toggleProfileActions({ authenticated }) {
     }
 }
 
-function updateProfileUI(profile) {
-    const normalized = normalizeSessionProfile(profile) || {
-        username: DEFAULT_GUEST_NAME,
-        displayName: DEFAULT_GUEST_NAME,
-        wins: 0,
-        avatarPath: null
-    };
+function updateProfileCorner(profile) {
+    const activeProfile = profile || profileManager.getGuestProfile();
+    const displayName = activeProfile.displayName || DEFAULT_GUEST_NAME;
+    const wins = Number.isFinite(activeProfile.wins) ? activeProfile.wins : 0;
+    const storedAvatar = profileManager.getStoredAvatarPath();
+    const avatarPath = activeProfile.avatarPath || storedAvatar || DEFAULT_AVATAR_PATH;
 
     if (profileEls.displayName) {
-        profileEls.displayName.textContent = normalized.displayName;
+        profileEls.displayName.textContent = displayName;
     }
 
     if (profileEls.wins) {
-        profileEls.wins.textContent = normalized.wins;
+        profileEls.wins.textContent = wins;
     }
 
-    const shouldUseStoredAvatar = Boolean(sessionProfile && !normalized.avatarPath);
-    const storedAvatar = shouldUseStoredAvatar ? readLocalAvatarPath() : null;
-    const avatarPath = normalized.avatarPath || storedAvatar || DEFAULT_AVATAR_PATH;
     setAvatar(avatarPath);
-    if (sessionProfile && normalized.avatarPath) {
-        persistLocalAvatarPath(normalized.avatarPath);
+
+    if (!activeProfile.isGuest && activeProfile.avatarPath) {
+        persistLocalAvatarPath(activeProfile.avatarPath);
+    }
+}
+
+function updateGamePlayerLabels(profile) {
+    if (!profile || !currentPlayers || !myPlayerId || !currentPlayers[myPlayerId]) {
+        return;
+    }
+    currentPlayers[myPlayerId].username = profile.displayName;
+    refreshPlayerLabels();
+    updateScoreboardDisplay(latestScore);
+}
+
+function syncProfileWithSocket(profile) {
+    if (!socket.connected) {
+        return;
+    }
+    const activeProfile = profile || profileManager.getGuestProfile();
+    const displayName = activeProfile.displayName || DEFAULT_GUEST_NAME;
+    if (displayName) {
+        socket.emit('setUsername', displayName);
+    }
+    if (!activeProfile.isGuest) {
+        socket.emit('linkAccount', {
+            accountName: activeProfile.username,
+            displayName
+        });
     }
 }
 
@@ -638,14 +696,6 @@ function persistLocalAvatarPath(path) {
     setLocalStorageItem(AVATAR_STORAGE_KEY, path);
 }
 
-function readLocalAvatarPath() {
-    return getLocalStorageItem(AVATAR_STORAGE_KEY);
-}
-
-function clearLocalAvatarPath() {
-    removeLocalStorageItem(AVATAR_STORAGE_KEY);
-}
-
 function hideProfilePrompt(remember = false) {
     if (!promptEls.modal) return;
     promptEls.modal.classList.add('hidden');
@@ -657,10 +707,10 @@ function hideProfilePrompt(remember = false) {
 function maybeShowProfilePrompt(profile) {
     if (!promptEls.modal) return;
     const dismissed = getLocalStorageItem(PROFILE_PROMPT_DISMISSED_KEY) === 'true';
-    if (dismissed) return;
-    const cleanedName = sanitizeName(profile?.displayName || '');
+    if (dismissed || !profile || profile.isGuest) return;
+    const cleanedName = profileManager.sanitizeName(profile.displayName || '');
     const missingName = !cleanedName || cleanedName.toLowerCase() === DEFAULT_GUEST_NAME.toLowerCase();
-    const missingAvatar = !profile?.avatarPath && !readLocalAvatarPath();
+    const missingAvatar = !profile.avatarPath && !profileManager.getStoredAvatarPath();
     if (missingName || missingAvatar) {
         promptEls.modal.classList.remove('hidden');
     }
@@ -697,8 +747,10 @@ function handleAvatarSelection(event) {
             persistLocalAvatarPath(data.avatarPath);
             showToast('Avatar updated successfully.', 'success');
             hideProfilePrompt(true);
-            if (sessionProfile) {
-                sessionProfile.avatarPath = data.avatarPath;
+            if (profileManager.profile) {
+                profileManager.profile.avatarPath = data.avatarPath;
+                profileManager.profile.isGuest = false;
+                profileManager.notifyObservers();
             }
         })
         .catch((error) => {
@@ -778,24 +830,7 @@ mainLobbyEls.joinOnlineBtn.addEventListener('click', () => {
 
 socket.on('connect', () => {
     console.log('Successfully connected to the game server with ID:', socket.id);
-    const stored = sanitizeName(readStoredName()).slice(0, 24);
-    if (stored) {
-        myDisplayName = stored;
-        if (identityEls.input) {
-            identityEls.input.value = stored;
-        }
-        if (displayNameInput) {
-            displayNameInput.value = stored;
-        }
-        updateNamePreview(stored);
-        socket.emit('setUsername', stored);
-    }
-    if (sessionProfile) {
-        socket.emit('linkAccount', {
-            accountName: sessionProfile.username,
-            displayName: sessionProfile.displayName || stored
-        });
-    }
+    syncProfileWithSocket(profileManager.profile);
 });
 
 // Updates the list of available LAN games in the main lobby.
@@ -877,7 +912,7 @@ socket.on('gameStateUpdate', (gameState) => {
         const winnerLabel = gameState.winnerName || formatColorLabel(gameState.winner);
         gameEls.winnerText.textContent = `${winnerLabel} Wins!`;
         gameEls.gameOverMessage.classList.remove('hidden');
-        loadSessionProfile();
+        profileManager.loadProfile();
     }
 });
 
@@ -1029,7 +1064,7 @@ function refreshPlayerLabels() {
 function derivePlayerLabel(player, fallback) {
     if (!player) return fallback;
     const rawLabel = player.username || player.name || player.displayName || player.playerName || '';
-    const cleaned = sanitizeName(rawLabel).slice(0, 24);
+    const cleaned = profileManager.sanitizeName(rawLabel).slice(0, 24);
     return cleaned || fallback;
 }
 
