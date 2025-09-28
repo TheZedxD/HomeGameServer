@@ -21,7 +21,7 @@
             <label for="login-password" class="input-label">Password</label>
             <input id="login-password" name="password" class="input-field" type="password" autocomplete="current-password" required minlength="6">
 
-            <input type="hidden" name="_csrf" id="csrf-token-field">
+            <input type="hidden" name="_csrf" id="csrf-token">
 
             <div class="auth-actions">
                 <button type="submit" class="btn btn-primary">Login</button>
@@ -30,15 +30,24 @@
         </form>
     </main>
     <script>
-        (function populateCsrfField() {
-            const field = document.getElementById('csrf-token-field');
+        document.addEventListener('DOMContentLoaded', async () => {
+            const field = document.getElementById('csrf-token');
             if (!field) return;
-            const cookieName = 'homegame.csrf=';
-            const match = document.cookie.split(';').map(part => part.trim()).find(part => part.startsWith(cookieName));
-            if (match) {
-                field.value = decodeURIComponent(match.substring(cookieName.length));
+            try {
+                const response = await fetch('/api/csrf-token', {
+                    credentials: 'include',
+                    headers: { 'Accept': 'application/json' }
+                });
+                if (!response.ok) {
+                    throw new Error('Failed to obtain CSRF token.');
+                }
+                const data = await response.json();
+                field.value = typeof data?.token === 'string' ? data.token : '';
+            } catch (error) {
+                console.error('Unable to load CSRF token.', error);
+                field.value = '';
             }
-        })();
+        });
     </script>
 </body>
 </html>
