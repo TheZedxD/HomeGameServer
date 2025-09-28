@@ -1,5 +1,6 @@
 import { CheckersScene } from '../components/CheckersScene.js';
 import { DEFAULT_GUEST_NAME } from './ProfileManager.js';
+import { ErrorHandler } from '../utils/ErrorHandler.js';
 
 const PLAYER_COLOR_SWATCHES = {
   red: '#ff6b6b',
@@ -35,6 +36,10 @@ export class GameManager {
     this.socket.on('connect', () => {
       console.log('Successfully connected to the game server with ID:', this.socket.id);
       this.syncProfileWithSocket(this.profileManager.profile);
+    });
+    this.socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+      ErrorHandler.showUserError('Failed to connect to game server. Please refresh the page.');
     });
     this.socket.on('updateRoomList', (openRooms) => {
       this.uiManager.renderRoomList(openRooms);
@@ -116,6 +121,24 @@ export class GameManager {
     });
     this.socket.on('playerLeft', (message) => this.uiManager.showToast(message, 'info'));
     this.socket.on('illegalMove', (message) => this.uiManager.showToast(message, 'error'));
+    this.socket.on('disconnect', (reason) => {
+      console.warn('Socket disconnected:', reason);
+      if (reason === 'io server disconnect') {
+        ErrorHandler.showUserError('Disconnected from server. Please refresh the page.');
+      }
+    });
+
+    this.socket.emit = new Proxy(this.socket.emit, {
+      apply: (target, thisArg, args) => {
+        try {
+          return Reflect.apply(target, thisArg, args);
+        } catch (error) {
+          console.error('Socket emission failed:', error);
+          ErrorHandler.showUserError('Failed to communicate with server.');
+          throw error;
+        }
+      }
+    });
   }
 
   createGame(game, roomCode, mode = 'lan') {

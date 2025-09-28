@@ -367,6 +367,24 @@ app.post('/api/profile/avatar', requireAuth, csrfMiddleware, (req, res) => {
 
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
+app.use((err, req, res, next) => {
+    console.error('Server error:', err);
+
+    if (err && err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'File too large' });
+    }
+
+    if (err && err.type === 'entity.parse.failed') {
+        return res.status(400).json({ error: 'Invalid request data' });
+    }
+
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    res.status(500).json({
+        error: 'Internal server error',
+        ...(isDevelopment && { details: err.message })
+    });
+});
+
 io.on('connection', (socket) => {
     console.log(`A user connected: ${socket.id}`);
     players[socket.id] = { playerId: socket.id, inRoom: null, username: null, account: null };

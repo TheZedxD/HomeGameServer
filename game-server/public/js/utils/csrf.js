@@ -1,3 +1,5 @@
+import { ErrorHandler } from './ErrorHandler.js';
+
 function cloneRequestOptions(init = {}) {
   const options = { ...init };
 
@@ -71,26 +73,25 @@ export class CsrfService {
     }
 
     if (!this.tokenPromise) {
-      this.tokenPromise = fetch('/api/csrf-token', {
-        credentials: 'include',
-        headers: { Accept: 'application/json' }
-      })
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error('Failed to fetch CSRF token.');
-          }
-          return response.json();
-        })
-        .then((data) => {
-          const token = typeof data?.token === 'string' ? data.token : '';
-          this.setToken(token);
-          return token;
-        })
-        .catch((error) => {
-          this.tokenPromise = null;
-          this.setToken('');
-          throw error;
+      this.tokenPromise = ErrorHandler.handleAsyncOperation(async () => {
+        const response = await fetch('/api/csrf-token', {
+          credentials: 'include',
+          headers: { Accept: 'application/json' }
         });
+        if (!response.ok) {
+          const error = new Error(`HTTP ${response.status}`);
+          error.status = response.status;
+          throw error;
+        }
+        const data = await response.json();
+        const token = typeof data?.token === 'string' ? data.token : '';
+        this.setToken(token);
+        return token;
+      }, 'CSRF token retrieval').catch((error) => {
+        this.tokenPromise = null;
+        this.setToken('');
+        throw error;
+      });
     }
 
     try {
@@ -102,15 +103,18 @@ export class CsrfService {
     }
   }
 
-  async fetch(input, init = {}, { retry = true } = {}) {
+  async fetch(input, init = {}, { retry = true, operationName = 'request', showUserError = true } = {}) {
     try {
       const token = await this.ensureToken();
       const options = cloneRequestOptions(init);
       attachCsrfToken(options, token);
-      const response = await fetch(input, options);
+      const executeFetch = async () => fetch(input, options);
+      const response = showUserError
+        ? await ErrorHandler.handleAsyncOperation(executeFetch, operationName)
+        : await executeFetch();
       if (response.status === 403 && retry) {
         await this.ensureToken(true);
-        return this.fetch(input, init, { retry: false });
+        return this.fetch(input, init, { retry: false, operationName, showUserError });
       }
       return response;
     } catch (error) {

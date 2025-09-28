@@ -4,6 +4,7 @@ import {
   PROFILE_PROMPT_DISMISSED_KEY
 } from '../managers/ProfileManager.js';
 import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
+import { ErrorHandler } from '../utils/ErrorHandler.js';
 
 export function createProfileUI(elements, toast) {
   const { identity, profile, prompt } = elements;
@@ -91,7 +92,11 @@ export function createProfileUI(elements, toast) {
     const formData = new FormData();
     formData.append('avatar', file);
     try {
-      const response = await profileManager.csrfFetch('/api/profile/avatar', { method: 'POST', body: formData });
+      const response = await profileManager.csrfFetch(
+        '/api/profile/avatar',
+        { method: 'POST', body: formData },
+        { operationName: 'avatar upload', showUserError: false }
+      );
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(errorText || 'Upload failed');
@@ -109,7 +114,8 @@ export function createProfileUI(elements, toast) {
       }
     } catch (error) {
       console.error('Avatar upload failed.', error);
-      toast.showToast('Unable to upload avatar. Please try another image.', 'error');
+      const message = ErrorHandler.handleFetchError(error, 'avatar upload');
+      toast.showToast(message, 'error');
     } finally {
       profile.avatarForm?.reset();
     }
@@ -126,9 +132,15 @@ export function createProfileUI(elements, toast) {
     profile.signInButton?.addEventListener('click', () => { window.location.href = '/login'; });
     profile.signOutButton?.addEventListener('click', async () => {
       try {
-        await manager.csrfFetch('/logout', { method: 'POST' });
+        await manager.csrfFetch(
+          '/logout',
+          { method: 'POST' },
+          { operationName: 'logout', showUserError: false }
+        );
       } catch (error) {
         console.warn('Failed to log out gracefully.', error);
+        const message = ErrorHandler.handleFetchError(error, 'logout');
+        toast.showToast(message, 'error');
       }
       window.location.href = '/login';
     });
