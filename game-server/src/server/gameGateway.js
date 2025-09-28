@@ -112,6 +112,7 @@ class ModularGameServer extends EventEmitter {
                 });
                 setPlayerRoom(room.id);
                 socket.join(room.id);
+                socket.emit('joinedMatchLobby', { room: room.toJSON(), yourId: socket.id });
                 this.io.to(room.id).emit('roomStateUpdate', room.toJSON());
             } catch (error) {
                 this.logger.error('Failed to create game:', error);
@@ -139,6 +140,7 @@ class ModularGameServer extends EventEmitter {
                 });
                 setPlayerRoom(room.id);
                 socket.join(room.id);
+                socket.emit('joinedMatchLobby', { room: room.toJSON(), yourId: socket.id });
                 this.io.to(room.id).emit('roomStateUpdate', room.toJSON());
             } catch (error) {
                 socket.emit('error', error.message);
