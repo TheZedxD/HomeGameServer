@@ -24,7 +24,11 @@ echo "[*] NPM version:  $(npm -v)"
 
 if [ -f package-lock.json ]; then
     echo "[*] Installing dependencies with npm ci..."
-    npm ci
+    if ! npm ci; then
+        status=$?
+        echo "[!] npm ci failed (exit code $status). Attempting recovery with npm install..." >&2
+        npm install
+    fi
 else
     echo "[*] Installing dependencies with npm install..."
     npm install

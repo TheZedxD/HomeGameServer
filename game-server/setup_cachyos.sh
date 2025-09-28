@@ -15,7 +15,11 @@ if ! command -v npm >/dev/null 2>&1; then
 fi
 
 echo "[*] Installing dependencies with npm ci..."
-npm ci
+if ! npm ci; then
+  status=$?
+  echo "[!] npm ci failed (exit code $status). Retrying with npm install to refresh lockfile..." >&2
+  npm install
+fi
 
 echo "[*] Ensuring environment file exists..."
 if [ ! -f .env ]; then
