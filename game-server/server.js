@@ -11,6 +11,21 @@ const session = require('express-session');
 const createFileStore = require('connect-session-file');
 const { Server } = require('socket.io');
 
+const GuestSessionManager = require('./lib/guestSessions');
+const {
+    ACCESS_TOKEN_COOKIE,
+    CSRF_TOKEN_COOKIE,
+    createAccessToken,
+    generateCsrfToken,
+    getAccessTokenFromRequest,
+    getCsrfCookie,
+    setAccessTokenCookie,
+    setCsrfCookie,
+    clearAuthCookies,
+    verifyAccessToken,
+} = require('./lib/authTokens');
+const { parseCookies } = require('./lib/cookies');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
@@ -22,6 +37,11 @@ const SESSION_COOKIE_NAME = 'homegame.sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 const SESSION_STORE_DIR = path.join(DATA_DIR, 'sessions');
 const SESSION_SECRET = process.env.SESSION_SECRET || 'homegame_session_secret';
+const JWT_SECRET = process.env.JWT_SECRET || 'homegame_jwt_secret';
+const GUEST_SESSION_SECRET = process.env.GUEST_SESSION_SECRET || `${SESSION_SECRET}-guest`;
+const GUEST_COOKIE_NAME = 'homegame.guest';
+const GUEST_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 2; // 2 days
+const CSRF_HEADER_NAME = 'x-csrf-token';
 const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
 const SCRYPT_KEY_LENGTH = 64;
 const COOKIE_SECURE = process.env.NODE_ENV === 'production';
@@ -29,7 +49,7 @@ const MAX_UPLOAD_SIZE = 2 * 1024 * 1024; // 2 MB
 
 const csrfTokens = new Map();
 
-function generateCSRFToken(sessionId) {
+function generateLegacyCsrfToken(sessionId) {
     const token = crypto.randomBytes(32).toString('hex');
     csrfTokens.set(sessionId, token);
     setTimeout(() => csrfTokens.delete(sessionId), 3600000); // 1 hour expiry
@@ -40,15 +60,36 @@ function validateCSRFToken(sessionId, token) {
     return csrfTokens.get(sessionId) === token;
 }
 
-function csrfMiddleware(req, res, next) {
-    if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
-        const token = req.body._csrf || req.headers['x-csrf-token'];
-        const sessionId = req.sessionID;
-        if (!sessionId || !validateCSRFToken(sessionId, token)) {
-            return res.status(403).json({ error: 'Invalid CSRF token' });
-        }
+function tokensMatch(tokenA, tokenB) {
+    if (typeof tokenA !== 'string' || typeof tokenB !== 'string') {
+        return false;
     }
-    next();
+    const bufA = Buffer.from(tokenA);
+    const bufB = Buffer.from(tokenB);
+    if (bufA.length !== bufB.length) {
+        return false;
+    }
+    return crypto.timingSafeEqual(bufA, bufB);
+}
+
+function csrfMiddleware(req, res, next) {
+    if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+        return next();
+    }
+
+    const submittedToken = req.body?._csrf || req.headers[CSRF_HEADER_NAME];
+    const cookieToken = getCsrfCookie(req);
+
+    if (submittedToken && cookieToken && tokensMatch(submittedToken, cookieToken)) {
+        return next();
+    }
+
+    const sessionId = req.sessionID;
+    if (sessionId && submittedToken && validateCSRFToken(sessionId, submittedToken)) {
+        return next();
+    }
+
+    return res.status(403).json({ error: 'Invalid CSRF token' });
 }
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -56,8 +97,22 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(SESSION_STORE_DIR, { recursive: true });
 initializeUserStore();
 
+const guestSessionManager = new GuestSessionManager({
+    filePath: path.join(DATA_DIR, 'guest-sessions.json'),
+    secret: GUEST_SESSION_SECRET,
+    ttl: GUEST_SESSION_TTL_MS,
+});
+
+process.on('exit', () => guestSessionManager.stop());
+process.on('SIGTERM', () => guestSessionManager.stop());
+process.on('SIGINT', () => guestSessionManager.stop());
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use((req, res, next) => {
+    req.cookies = parseCookies(req.headers?.cookie || '');
+    next();
+});
 
 const resolvedStoreFactory = typeof createFileStore === 'function'
     ? createFileStore(session)
@@ -91,7 +146,28 @@ const sessionMiddleware = session({
 app.use(sessionMiddleware);
 
 app.use((req, res, next) => {
+    const guestToken = req.cookies?.[GUEST_COOKIE_NAME];
+    let guestSession = guestSessionManager.getSessionByToken(guestToken);
+
+    if (!guestSession) {
+        const { session: createdSession, token } = guestSessionManager.createSession();
+        guestSession = createdSession;
+        res.cookie(GUEST_COOKIE_NAME, token, {
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: COOKIE_SECURE,
+            maxAge: GUEST_SESSION_TTL_MS,
+            path: '/',
+        });
+    }
+
+    req.guestSession = guestSession;
+    next();
+});
+
+app.use((req, res, next) => {
     req.user = null;
+    req.authContext = { method: null, payload: null };
 
     if (req.session) {
         if (!req.session.createdAt) {
@@ -109,8 +185,53 @@ app.use((req, res, next) => {
                 wins: userRecord.wins || 0,
                 avatarPath: userRecord.avatarPath || null
             };
+            req.authContext = { method: 'session', payload: { username: userRecord.username } };
         } else {
             req.session.username = null;
+        }
+    }
+
+    if (!req.user) {
+        const token = getAccessTokenFromRequest(req);
+        if (token) {
+            const payload = verifyAccessToken(token, JWT_SECRET);
+            if (payload?.sub) {
+                const userRecord = getUserRecord(payload.sub);
+                if (userRecord) {
+                    req.user = {
+                        username: userRecord.username,
+                        displayName: userRecord.displayName || userRecord.username,
+                        wins: userRecord.wins || 0,
+                        avatarPath: userRecord.avatarPath || null
+                    };
+                    req.authContext = { method: 'jwt', payload };
+                    if (req.session) {
+                        req.session.username = userRecord.username.toLowerCase();
+                    }
+                } else {
+                    clearAuthCookies(res, { secure: COOKIE_SECURE });
+                }
+            } else {
+                clearAuthCookies(res, { secure: COOKIE_SECURE });
+            }
+        }
+    }
+
+    if (req.user && req.authContext.method === 'session') {
+        const hasAccessToken = Boolean(getAccessTokenFromRequest(req));
+        if (!hasAccessToken) {
+            const tokenPayload = {
+                sub: req.user.username,
+                displayName: req.user.displayName,
+                wins: req.user.wins,
+                avatarPath: req.user.avatarPath,
+                guestWins: 0,
+            };
+            const accessToken = createAccessToken(tokenPayload, JWT_SECRET);
+            setAccessTokenCookie(res, accessToken, { secure: COOKIE_SECURE });
+        }
+        if (!getCsrfCookie(req)) {
+            setCsrfCookie(res, generateCsrfToken(), { secure: COOKIE_SECURE });
         }
     }
 
@@ -136,8 +257,11 @@ app.get('/api/csrf-token', (req, res) => {
         req.session.csrfSeeded = Date.now();
     }
 
-    const token = generateCSRFToken(sessionId);
-    res.json({ token });
+    const legacyToken = sessionId ? generateLegacyCsrfToken(sessionId) : null;
+    const doubleSubmitToken = generateCsrfToken();
+    setCsrfCookie(res, doubleSubmitToken, { secure: COOKIE_SECURE });
+
+    res.json({ token: legacyToken || doubleSubmitToken, doubleSubmitToken });
 });
 
 app.get('/', (req, res) => {
@@ -229,6 +353,18 @@ app.post('/logout', csrfMiddleware, (req, res) => {
         csrfTokens.delete(sessionId);
     }
 
+    clearAuthCookies(res, { secure: COOKIE_SECURE });
+
+    const { session: newGuest, token: newGuestToken } = guestSessionManager.createSession();
+    req.guestSession = newGuest;
+    res.cookie(GUEST_COOKIE_NAME, newGuestToken, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: COOKIE_SECURE,
+        maxAge: GUEST_SESSION_TTL_MS,
+        path: '/',
+    });
+
     if (!req.session) {
         res.clearCookie(SESSION_COOKIE_NAME, {
             httpOnly: true,
@@ -255,14 +391,25 @@ app.post('/logout', csrfMiddleware, (req, res) => {
 });
 
 app.get('/api/session', (req, res) => {
+    const guestDetails = req.guestSession ? {
+        wins: req.guestSession.data?.wins || 0,
+        lastRoom: req.guestSession.data?.lastRoom || null,
+    } : null;
+
     if (!req.user) {
-        return res.json({ authenticated: false });
+        return res.json({ authenticated: false, guest: guestDetails });
     }
-    res.json({ authenticated: true, user: req.user });
+    res.json({
+        authenticated: true,
+        user: req.user,
+        guest: guestDetails,
+        authMethod: req.authContext?.method || null,
+        guestUpgrade: req.guestUpgrade || null,
+    });
 });
 
 app.get('/api/profile', requireAuth, (req, res) => {
-    const userRecord = getUserRecord(req.session.username);
+    const userRecord = getUserRecord(req.user.username);
     if (!userRecord) {
         return res.status(404).json({ error: 'Profile not found.' });
     }
@@ -279,7 +426,7 @@ app.post('/api/profile', requireAuth, csrfMiddleware, (req, res) => {
     const displayNameValidation = hasDisplayName ? validateDisplayNameInput(req.body.displayName) : { value: null, error: null };
     const wins = Number.isFinite(Number(req.body.wins)) ? Math.max(0, Number(req.body.wins)) : undefined;
     const store = readUserStore();
-    const userKey = req.session.username;
+    const userKey = req.user.username.toLowerCase();
     const userRecord = store.users[userKey];
     if (!userRecord) {
         return res.status(404).json({ error: 'Profile not found.' });
@@ -356,7 +503,7 @@ app.post('/api/profile/avatar', requireAuth, csrfMiddleware, (req, res) => {
 
             fs.writeFileSync(resolvedPath, fileInfo.buffer, { mode: 0o600 });
 
-            updateUserAvatar(req.session.username, `/uploads/profiles/${finalName}`);
+            updateUserAvatar(req.user.username.toLowerCase(), `/uploads/profiles/${finalName}`);
             res.json({ avatarPath: `/uploads/profiles/${finalName}` });
         } catch (error) {
             console.error('Avatar upload failed:', error);
@@ -385,9 +532,68 @@ app.use((err, req, res, next) => {
     });
 });
 
+// Authenticate Socket.IO handshakes using the same HTTP cookies as the REST API.
+io.use((socket, next) => {
+    try {
+        const cookiesHeader = socket.handshake.headers?.cookie || '';
+        const parsedCookies = parseCookies(cookiesHeader);
+
+        let userRecord = null;
+        const accessToken = parsedCookies[ACCESS_TOKEN_COOKIE];
+        if (accessToken) {
+            const payload = verifyAccessToken(accessToken, JWT_SECRET);
+            if (payload?.sub) {
+                const record = getUserRecord(payload.sub);
+                if (record) {
+                    userRecord = {
+                        username: record.username,
+                        displayName: record.displayName || record.username,
+                        wins: record.wins || 0,
+                        avatarPath: record.avatarPath || null,
+                    };
+                }
+            }
+        }
+
+        let guestSession = null;
+        const guestToken = parsedCookies[GUEST_COOKIE_NAME];
+        if (guestToken) {
+            guestSession = guestSessionManager.getSessionByToken(guestToken);
+        }
+
+        if (!userRecord && !guestSession) {
+            const created = guestSessionManager.createSession();
+            guestSession = created.session;
+        }
+
+        socket.data.identity = {
+            user: userRecord,
+            guestSession,
+        };
+
+        next();
+    } catch (error) {
+        console.error('Socket authentication failed:', error);
+        next(new Error('Authentication failed'));
+    }
+});
+
 io.on('connection', (socket) => {
     console.log(`A user connected: ${socket.id}`);
-    players[socket.id] = { playerId: socket.id, inRoom: null, username: null, account: null };
+    const identity = socket.data.identity || {};
+    const guestSession = identity.guestSession;
+    const authUser = identity.user;
+
+    players[socket.id] = {
+        playerId: socket.id,
+        inRoom: null,
+        username: authUser?.displayName || guestSession?.data?.displayName || 'Guest',
+        account: authUser?.username || null,
+        guestId: guestSession?.id || null,
+    };
+    if (players[socket.id].guestId) {
+        guestSessionManager.recordDisplayName(players[socket.id].guestId, players[socket.id].username);
+    }
     socket.emit('updateRoomList', getOpenRooms());
 
     socket.on('linkAccount', ({ accountName, displayName }) => {
@@ -403,6 +609,9 @@ io.on('connection', (socket) => {
         } else if (sanitizedAccount) {
             players[socket.id].username = sanitizedAccount;
         }
+        if (players[socket.id].guestId) {
+            guestSessionManager.recordDisplayName(players[socket.id].guestId, players[socket.id].username);
+        }
         syncPlayerInRoom(socket.id);
     });
 
@@ -413,6 +622,9 @@ io.on('connection', (socket) => {
             players[socket.id].username = sanitized;
         } else if (error && !players[socket.id].username) {
             players[socket.id].username = 'Guest';
+        }
+        if (players[socket.id].guestId) {
+            guestSessionManager.recordDisplayName(players[socket.id].guestId, players[socket.id].username);
         }
         syncPlayerInRoom(socket.id);
     });
@@ -527,6 +739,11 @@ io.on('connection', (socket) => {
                     const account = getPlayerAccountByColor(room, winnerColor);
                     if (account) {
                         incrementUserWins(account);
+                    } else {
+                        const guestId = getPlayerGuestByColor(room, winnerColor);
+                        if (guestId) {
+                            guestSessionManager.recordWin(guestId);
+                        }
                     }
                 }
 
@@ -586,7 +803,8 @@ function joinRoom(socket, roomId) {
         playerId: socket.id,
         isReady: false,
         username: players[socket.id]?.username || null,
-        account: players[socket.id]?.account || null
+        account: players[socket.id]?.account || null,
+        guestId: players[socket.id]?.guestId || null,
     };
 
     socket.join(roomId);
@@ -595,6 +813,14 @@ function joinRoom(socket, roomId) {
     socket.emit('joinedMatchLobby', { room, yourId: socket.id });
     io.to(roomId).emit('roomStateUpdate', room);
     io.emit('updateRoomList', getOpenRooms());
+
+    if (players[socket.id]?.guestId) {
+        guestSessionManager.recordLastRoom(players[socket.id].guestId, {
+            roomId,
+            gameType: room.gameType,
+            mode: room.mode,
+        });
+    }
 }
 
 function handlePlayerDeparture(socket, { notify = false, disconnect = false } = {}) {
@@ -641,6 +867,7 @@ function syncPlayerInRoom(socketId) {
     if (room.players[socketId]) {
         room.players[socketId].username = player.username;
         room.players[socketId].account = player.account;
+        room.players[socketId].guestId = player.guestId;
         io.to(roomId).emit('roomStateUpdate', room);
     }
 }
@@ -720,6 +947,15 @@ function getPlayerAccountByColor(room, color) {
     const account = player?.account;
     if (typeof account === 'string' && account) {
         return sanitizeAccountName(account);
+    }
+    return null;
+}
+
+function getPlayerGuestByColor(room, color) {
+    if (!room || !color) return null;
+    const player = Object.values(room.players || {}).find(p => p.color === color);
+    if (player?.guestId) {
+        return player.guestId;
     }
     return null;
 }
@@ -817,6 +1053,8 @@ function establishSession(req, res, usernameKey, onSuccess) {
                 return res.status(500).send('Unable to persist session.');
             }
 
+            issueAuthenticationState(req, res, usernameKey);
+
             if (typeof onSuccess === 'function') {
                 onSuccess();
             }
@@ -824,8 +1062,113 @@ function establishSession(req, res, usernameKey, onSuccess) {
     });
 }
 
+/**
+ * Persist a freshly authenticated user's state across cookies and
+ * upgrade any guest metadata that was captured prior to sign-in.
+ */
+function issueAuthenticationState(req, res, usernameKey) {
+    let userRecord = getUserRecord(usernameKey);
+    if (!userRecord) {
+        return;
+    }
+
+    const transfer = transferGuestSession(req, res);
+    if (transfer?.data) {
+        const updated = applyGuestProgressToUser(usernameKey, transfer.data);
+        if (updated) {
+            userRecord = updated;
+        }
+        req.guestUpgrade = transfer.data;
+    }
+
+    const tokenPayload = {
+        sub: userRecord.username,
+        displayName: userRecord.displayName || userRecord.username,
+        wins: userRecord.wins || 0,
+        avatarPath: userRecord.avatarPath || null,
+        guestWins: transfer?.data?.wins || 0,
+    };
+
+    const accessToken = createAccessToken(tokenPayload, JWT_SECRET);
+    setAccessTokenCookie(res, accessToken, { secure: COOKIE_SECURE });
+    setCsrfCookie(res, generateCsrfToken(), { secure: COOKIE_SECURE });
+
+    req.user = {
+        username: tokenPayload.sub,
+        displayName: tokenPayload.displayName,
+        wins: tokenPayload.wins,
+        avatarPath: tokenPayload.avatarPath,
+    };
+    req.authContext = { method: 'jwt', payload: tokenPayload };
+}
+
+/**
+ * Promote an anonymous guest session into a permanent user account.
+ * Returns the data payload that was associated with the guest, if any.
+ */
+function transferGuestSession(req, res) {
+    if (!req.guestSession) {
+        return null;
+    }
+    const promoted = guestSessionManager.promoteSession(req.guestSession.id);
+    if (!promoted) {
+        return null;
+    }
+
+    res.clearCookie(GUEST_COOKIE_NAME, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: COOKIE_SECURE,
+        path: '/',
+    });
+    req.guestSession = null;
+    return promoted;
+}
+
+/**
+ * Apply guest game progress to a durable user account.
+ */
+function applyGuestProgressToUser(usernameKey, guestData) {
+    if (!guestData) {
+        return null;
+    }
+
+    const store = readUserStore();
+    const key = usernameKey.toLowerCase();
+    const record = store.users[key];
+    if (!record) {
+        return null;
+    }
+
+    let mutated = false;
+
+    if (Number.isFinite(Number(guestData.wins)) && guestData.wins > 0) {
+        record.wins = (record.wins || 0) + Number(guestData.wins);
+        mutated = true;
+    }
+
+    if (guestData.displayName && !record.displayName) {
+        const sanitized = sanitizeDisplayName(guestData.displayName);
+        if (sanitized) {
+            record.displayName = sanitized;
+            mutated = true;
+        }
+    }
+
+    if (guestData.lastRoom) {
+        record.lastGuestRoom = guestData.lastRoom;
+        mutated = true;
+    }
+
+    if (mutated) {
+        writeUserStore(store);
+    }
+
+    return record;
+}
+
 function requireAuth(req, res, next) {
-    if (!req.user || !req.session?.username) {
+    if (!req.user) {
         return res.status(401).json({ error: 'Not authenticated.' });
     }
     next();
