@@ -2,6 +2,7 @@ import { ProfileManager } from './managers/ProfileManager.js';
 import { UIManager } from './managers/UIManager.js';
 import { GameManager } from './managers/GameManager.js';
 import { ErrorHandler } from './utils/ErrorHandler.js';
+import { initializeWindowControls } from './ui/windowControls.js';
 
 async function initializeApp() {
   const socket = io();
@@ -10,6 +11,8 @@ async function initializeApp() {
   const gameManager = new GameManager(socket, uiManager, profileManager);
 
   window.uiManager = uiManager;
+
+  initializeWindowControls(uiManager);
 
   uiManager.bindIdentityControls(profileManager);
   uiManager.bindProfileEvents(profileManager, {

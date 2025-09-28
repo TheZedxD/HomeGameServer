@@ -1,125 +1,228 @@
-export class CheckersScene extends Phaser.Scene {
-  constructor(config) {
-    super({ key: 'CheckersScene' });
-    this.socket = config.socket;
-    this.myColor = config.myColor;
-    this.gameState = config.gameState;
-    this.pieceSprites = null;
-    this.selectedPiece = null;
+const RED_PIECES = new Set([1, 3]);
+const BLACK_PIECES = new Set([2, 4]);
+
+export class CheckersScene {
+  constructor(config = {}) {
+    const { socket, myColor, gameState, roundMessage, containerId = 'game-container' } = config;
+    this.socket = socket;
+    this.myColor = myColor;
+    this.gameState = gameState || null;
+    this.pendingAnnouncement = roundMessage || null;
+    this.containerId = containerId;
+
     this.BOARD_SIZE = 8;
     this.CELL_SIZE = 80;
-    this.pendingAnnouncement = config.roundMessage || null;
+
+    this.rootElement = null;
+    this.canvas = null;
+    this.ctx = null;
+    this.selectedPiece = null;
+    this.announcementElement = null;
+    this.announcementTimeout = null;
+
+    this.handleBoardClick = this.handleBoardClick.bind(this);
   }
 
-  create() {
-    this.pieceSprites = this.add.group();
-    this.drawBoard();
-    this.renderPieces();
-    this.input.on('pointerdown', this.handleBoardClick, this);
+  init() {
+    const host = document.getElementById(this.containerId);
+    if (!host) {
+      throw new Error('Unable to locate game container element.');
+    }
+
+    host.innerHTML = '';
+    this.rootElement = document.createElement('div');
+    this.rootElement.className = 'checkers-board';
+
+    const canvasSize = this.BOARD_SIZE * this.CELL_SIZE;
+    const pixelRatio = window.devicePixelRatio || 1;
+
+    this.canvas = document.createElement('canvas');
+    this.canvas.className = 'checkers-canvas';
+    this.canvas.width = canvasSize * pixelRatio;
+    this.canvas.height = canvasSize * pixelRatio;
+    this.canvas.style.width = `${canvasSize}px`;
+    this.canvas.style.maxWidth = '100%';
+    this.canvas.style.height = 'auto';
+    this.canvas.setAttribute('role', 'img');
+    this.canvas.setAttribute('aria-label', 'Interactive checkers board');
+
+    this.ctx = this.canvas.getContext('2d');
+    if (this.ctx) {
+      this.ctx.scale(pixelRatio, pixelRatio);
+      this.ctx.imageSmoothingEnabled = true;
+    }
+
+    this.rootElement.appendChild(this.canvas);
+    host.appendChild(this.rootElement);
+
+    this.canvas.addEventListener('click', this.handleBoardClick);
+
+    this.render();
+
     if (this.pendingAnnouncement) {
       this.showAnnouncement(this.pendingAnnouncement);
       this.pendingAnnouncement = null;
     }
   }
 
+  render() {
+    if (!this.ctx) return;
+    this.drawBoard();
+    this.drawPieces();
+  }
+
   drawBoard() {
-    const lightSquareColor = 0xc9d6a3;
-    const darkSquareColor = 0x0a4f0a;
+    if (!this.ctx) return;
+    const lightSquareColor = '#c9d6a3';
+    const darkSquareColor = '#0a4f0a';
+
     for (let y = 0; y < this.BOARD_SIZE; y++) {
       for (let x = 0; x < this.BOARD_SIZE; x++) {
         const color = (x + y) % 2 === 0 ? lightSquareColor : darkSquareColor;
-        this.add
-          .rectangle(x * this.CELL_SIZE, y * this.CELL_SIZE, this.CELL_SIZE, this.CELL_SIZE, color)
-          .setOrigin(0, 0);
+        this.ctx.fillStyle = color;
+        this.ctx.fillRect(x * this.CELL_SIZE, y * this.CELL_SIZE, this.CELL_SIZE, this.CELL_SIZE);
       }
     }
   }
 
-  updateGameState(newGameState) {
-    this.gameState = newGameState;
-    this.renderPieces();
-  }
+  drawPieces() {
+    if (!this.ctx || !this.gameState?.board) return;
+    const radius = this.CELL_SIZE / 2 - 8;
 
-  renderPieces() {
-    this.pieceSprites.clear(true, true);
-    if (!this.gameState || !this.gameState.board) return;
+    this.ctx.save();
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+
     for (let y = 0; y < this.BOARD_SIZE; y++) {
       for (let x = 0; x < this.BOARD_SIZE; x++) {
-        const pieceType = this.gameState.board[y][x];
-        if (pieceType !== 0) {
-          const isKing = pieceType === 3 || pieceType === 4;
-          const isRedPiece = [1, 3].includes(pieceType);
-          const pieceColor = isRedPiece ? 0xc0392b : 0x1e1b1b;
-          const strokeColor = isRedPiece ? 0xffa07a : 0xd4af37;
-          const pieceSprite = this.add.container(
-            x * this.CELL_SIZE + this.CELL_SIZE / 2,
-            y * this.CELL_SIZE + this.CELL_SIZE / 2
-          );
-          const circle = this.add
-            .circle(0, 0, this.CELL_SIZE / 2 - 8, pieceColor)
-            .setStrokeStyle(4, strokeColor);
-          pieceSprite.add(circle);
-          if (isKing) {
-            pieceSprite.add(this.add.text(0, 0, '👑', { fontSize: '24px', color: '#ffe066' }).setOrigin(0.5));
-          }
-          pieceSprite.setData({ gridX: x, gridY: y });
-          this.pieceSprites.add(pieceSprite);
+        const pieceType = this.gameState.board[y]?.[x] ?? 0;
+        if (!pieceType) continue;
+
+        const isKing = pieceType === 3 || pieceType === 4;
+        const isRedPiece = RED_PIECES.has(pieceType);
+        const centerX = x * this.CELL_SIZE + this.CELL_SIZE / 2;
+        const centerY = y * this.CELL_SIZE + this.CELL_SIZE / 2;
+        const fillColor = isRedPiece ? '#c0392b' : '#1e1b1b';
+        const strokeColor = isRedPiece ? '#ffa07a' : '#d4af37';
+        const isSelected = this.selectedPiece?.x === x && this.selectedPiece?.y === y;
+
+        this.ctx.beginPath();
+        this.ctx.fillStyle = fillColor;
+        this.ctx.strokeStyle = isSelected ? '#ffd700' : strokeColor;
+        this.ctx.lineWidth = isSelected ? 6 : 4;
+        this.ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        if (isKing) {
+          this.ctx.fillStyle = '#ffe066';
+          this.ctx.font = '24px sans-serif';
+          this.ctx.fillText('👑', centerX, centerY);
         }
       }
     }
+
+    this.ctx.restore();
   }
 
-  handleBoardClick(pointer) {
-    const gridX = Math.floor(pointer.x / this.CELL_SIZE);
-    const gridY = Math.floor(pointer.y / this.CELL_SIZE);
+  handleBoardClick(event) {
+    if (!this.canvas || !this.gameState) return;
+
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width / rect.width;
+    const pixelRatio = window.devicePixelRatio || 1;
+
+    const localX = (event.clientX - rect.left) * scaleX;
+    const localY = (event.clientY - rect.top) * (this.canvas.height / rect.height);
+
+    const normalizedX = localX / pixelRatio;
+    const normalizedY = localY / pixelRatio;
+
+    const gridX = Math.floor(normalizedX / this.CELL_SIZE);
+    const gridY = Math.floor(normalizedY / this.CELL_SIZE);
 
     if (gridX < 0 || gridY < 0 || gridX >= this.BOARD_SIZE || gridY >= this.BOARD_SIZE) {
       return;
     }
 
-    if (!this.gameState || this.gameState.turn !== this.myColor) return;
+    if (this.gameState.turn !== this.myColor) {
+      return;
+    }
 
-    const pieceAtClick = this.gameState.board[gridY][gridX];
+    const pieceAtClick = this.gameState.board[gridY]?.[gridX] ?? 0;
     const isMyPiece =
-      (this.myColor === 'red' && [1, 3].includes(pieceAtClick)) ||
-      (this.myColor === 'black' && [2, 4].includes(pieceAtClick));
+      (this.myColor === 'red' && RED_PIECES.has(pieceAtClick)) ||
+      (this.myColor === 'black' && BLACK_PIECES.has(pieceAtClick));
 
     if (this.selectedPiece) {
       const from = { x: this.selectedPiece.x, y: this.selectedPiece.y };
       const to = { x: gridX, y: gridY };
-      this.socket.emit('movePiece', { from, to });
-      this.selectedPiece.sprite.list[0].setStrokeStyle(4, this.selectedPiece.originalStroke);
+      this.socket?.emit('movePiece', { from, to });
       this.selectedPiece = null;
-    } else if (isMyPiece) {
-      const sprite = this.pieceSprites
-        .getChildren()
-        .find((p) => p.data.get('gridX') === gridX && p.data.get('gridY') === gridY);
-      if (sprite) {
-        const circle = sprite.list[0];
-        this.selectedPiece = { x: gridX, y: gridY, sprite, originalStroke: circle.strokeColor };
-        circle.setStrokeStyle(6, 0xffd700);
-      }
+      this.render();
+      return;
+    }
+
+    if (isMyPiece) {
+      this.selectedPiece = { x: gridX, y: gridY };
+      this.render();
     }
   }
 
+  updateGameState(newGameState) {
+    this.gameState = newGameState;
+    if (!this.gameState?.board) {
+      this.selectedPiece = null;
+    } else if (this.selectedPiece) {
+      const { x, y } = this.selectedPiece;
+      const piece = this.gameState.board[y]?.[x] ?? 0;
+      const stillMyPiece =
+        (this.myColor === 'red' && RED_PIECES.has(piece)) ||
+        (this.myColor === 'black' && BLACK_PIECES.has(piece));
+      if (!stillMyPiece) {
+        this.selectedPiece = null;
+      }
+    }
+    this.render();
+  }
+
   showAnnouncement(message) {
-    const centerX = this.cameras.main.width / 2;
-    const centerY = this.cameras.main.height / 2;
-    const announceText = this.add
-      .text(centerX, centerY, message, {
-        fontSize: '48px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-        align: 'center'
-      })
-      .setOrigin(0.5);
-    announceText.setStroke('#000000', 8);
-    this.tweens.add({
-      targets: announceText,
-      alpha: 0,
-      duration: 1500,
-      delay: 1000,
-      onComplete: () => announceText.destroy()
-    });
+    if (!message) return;
+
+    if (!this.rootElement) {
+      this.pendingAnnouncement = message;
+      return;
+    }
+
+    if (!this.announcementElement) {
+      this.announcementElement = document.createElement('div');
+      this.announcementElement.className = 'checkers-announcement';
+      this.rootElement.appendChild(this.announcementElement);
+    }
+
+    this.announcementElement.textContent = message;
+    this.announcementElement.classList.add('visible');
+
+    clearTimeout(this.announcementTimeout);
+    this.announcementTimeout = setTimeout(() => {
+      this.announcementElement?.classList.remove('visible');
+    }, 2500);
+  }
+
+  destroy() {
+    if (this.canvas) {
+      this.canvas.removeEventListener('click', this.handleBoardClick);
+    }
+    if (this.announcementTimeout) {
+      clearTimeout(this.announcementTimeout);
+      this.announcementTimeout = null;
+    }
+    if (this.rootElement?.parentNode) {
+      this.rootElement.parentNode.removeChild(this.rootElement);
+    }
+    this.rootElement = null;
+    this.canvas = null;
+    this.ctx = null;
+    this.selectedPiece = null;
   }
 }
