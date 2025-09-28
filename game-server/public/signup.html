@@ -25,11 +25,24 @@
             <label for="signup-password" class="input-label">Password</label>
             <input id="signup-password" name="password" class="input-field" type="password" autocomplete="new-password" required minlength="6">
 
+            <input type="hidden" name="_csrf" id="csrf-token-field">
+
             <div class="auth-actions">
                 <button type="submit" class="btn btn-primary">Sign Up</button>
                 <a href="/login" class="btn" role="button">Back to Login</a>
             </div>
         </form>
     </main>
+    <script>
+        (function populateCsrfField() {
+            const field = document.getElementById('csrf-token-field');
+            if (!field) return;
+            const cookieName = 'homegame.csrf=';
+            const match = document.cookie.split(';').map(part => part.trim()).find(part => part.startsWith(cookieName));
+            if (match) {
+                field.value = decodeURIComponent(match.substring(cookieName.length));
+            }
+        })();
+    </script>
 </body>
 </html>

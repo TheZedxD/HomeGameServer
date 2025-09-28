@@ -17,8 +17,123 @@ const DATA_DIR = path.join(__dirname, 'data');
 const USER_DATA_FILE = path.join(DATA_DIR, 'users.json');
 const UPLOAD_DIR = path.join(__dirname, 'public/uploads/profiles');
 const SESSION_COOKIE_NAME = 'homegame.sid';
+const CSRF_COOKIE_NAME = 'homegame.csrf';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+const SESSION_STORE_FILE = path.join(DATA_DIR, 'sessions.json');
+const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
+const SCRYPT_KEY_LENGTH = 64;
+const MAX_SESSIONS = 5000;
+const SESSION_CLEANUP_INTERVAL_MS = 1000 * 60 * 60; // 1 hour
+const COOKIE_SECURE = process.env.NODE_ENV === 'production';
 const MAX_UPLOAD_SIZE = 2 * 1024 * 1024; // 2 MB
+
+class PersistentSessionStore {
+    constructor(filePath) {
+        this.filePath = filePath;
+        this.sessions = new Map();
+        this.load();
+    }
+
+    load() {
+        try {
+            if (!fs.existsSync(this.filePath)) {
+                this.persist();
+                return;
+            }
+            const raw = fs.readFileSync(this.filePath, 'utf8');
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed.sessions)) {
+                parsed.sessions.forEach((session) => {
+                    if (session && session.id && session.username) {
+                        this.sessions.set(session.id, session);
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('Failed to load session store:', error);
+            this.sessions = new Map();
+        }
+    }
+
+    persist() {
+        const payload = {
+            sessions: Array.from(this.sessions.values())
+        };
+        fs.writeFileSync(this.filePath, JSON.stringify(payload, null, 2));
+    }
+
+    create(usernameKey) {
+        this.cleanupExpired(SESSION_TTL_MS);
+        if (this.sessions.size >= MAX_SESSIONS) {
+            this.removeStaleSessions();
+        }
+        const sessionId = crypto.randomUUID();
+        const csrfToken = crypto.randomBytes(32).toString('hex');
+        const session = {
+            id: sessionId,
+            username: usernameKey,
+            createdAt: Date.now(),
+            lastAccess: Date.now(),
+            csrfToken
+        };
+        this.sessions.set(sessionId, session);
+        this.persist();
+        return session;
+    }
+
+    get(sessionId) {
+        return this.sessions.get(sessionId) || null;
+    }
+
+    touch(sessionId) {
+        const session = this.sessions.get(sessionId);
+        if (!session) return;
+        session.lastAccess = Date.now();
+    }
+
+    update(sessionId, updates) {
+        const session = this.sessions.get(sessionId);
+        if (!session) return null;
+        Object.assign(session, updates, { lastAccess: Date.now() });
+        this.persist();
+        return session;
+    }
+
+    delete(sessionId) {
+        if (this.sessions.delete(sessionId)) {
+            this.persist();
+        }
+    }
+
+    cleanupExpired(ttl) {
+        const now = Date.now();
+        let dirty = false;
+        for (const [id, session] of this.sessions.entries()) {
+            if (now - session.createdAt > ttl) {
+                this.sessions.delete(id);
+                dirty = true;
+            }
+        }
+        if (dirty) {
+            this.persist();
+        }
+    }
+
+    removeStaleSessions() {
+        if (this.sessions.size < MAX_SESSIONS) return;
+        const sorted = Array.from(this.sessions.values()).sort((a, b) => {
+            return (a.lastAccess || a.createdAt) - (b.lastAccess || b.createdAt);
+        });
+        const targetSize = Math.floor(MAX_SESSIONS * 0.9);
+        for (const session of sorted) {
+            if (this.sessions.size <= targetSize) {
+                break;
+            }
+            this.sessions.delete(session.id);
+        }
+        this.persist();
+    }
+}
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -27,7 +142,9 @@ initializeUserStore();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const sessions = new Map();
+const sessionStore = new PersistentSessionStore(SESSION_STORE_FILE);
+sessionStore.cleanupExpired(SESSION_TTL_MS);
+setInterval(() => sessionStore.cleanupExpired(SESSION_TTL_MS), SESSION_CLEANUP_INTERVAL_MS);
 let players = {};
 let rooms = {};
 const MAX_PLAYERS_PER_ROOM = 2;
@@ -35,24 +152,28 @@ const MAX_PLAYERS_PER_ROOM = 2;
 app.use((req, res, next) => {
     req.cookies = parseCookies(req.headers.cookie || '');
     const sessionId = req.cookies[SESSION_COOKIE_NAME];
-    if (sessionId && sessions.has(sessionId)) {
-        const session = sessions.get(sessionId);
-        if (Date.now() - session.createdAt > SESSION_TTL_MS) {
-            sessions.delete(sessionId);
-        } else {
-            session.lastAccess = Date.now();
-            req.session = session;
-            const userRecord = getUserRecord(session.username);
-            if (userRecord) {
-                req.user = {
-                    username: userRecord.username,
-                    displayName: userRecord.displayName || userRecord.username,
-                    wins: userRecord.wins || 0,
-                    avatarPath: userRecord.avatarPath || null
-                };
+    if (sessionId) {
+        const session = sessionStore.get(sessionId);
+        if (session) {
+            if (Date.now() - session.createdAt > SESSION_TTL_MS) {
+                sessionStore.delete(sessionId);
+            } else {
+                req.session = session;
+                sessionStore.touch(sessionId);
+                const userRecord = getUserRecord(session.username);
+                if (userRecord) {
+                    req.user = {
+                        username: userRecord.username,
+                        displayName: userRecord.displayName || userRecord.username,
+                        wins: userRecord.wins || 0,
+                        avatarPath: userRecord.avatarPath || null
+                    };
+                }
             }
         }
     }
+
+    req.csrfToken = ensureCsrfToken(req, res);
     next();
 });
 
@@ -60,6 +181,8 @@ app.use((req, res, next) => {
     res.setHeader('Cache-Control', 'no-store');
     next();
 });
+
+app.use(csrfProtection);
 
 app.get('/', (req, res) => {
     if (!req.user) {
@@ -103,13 +226,11 @@ app.post('/signup', (req, res) => {
         return res.status(409).send('That username is already taken.');
     }
 
-    const salt = crypto.randomBytes(16).toString('hex');
-    const passwordHash = hashPassword(password, salt);
+    const passwordHash = hashPassword(password);
     store.users[key] = {
         username,
         displayName,
         passwordHash,
-        salt,
         wins: 0,
         avatarPath: null
     };
@@ -127,26 +248,42 @@ app.post('/login', (req, res) => {
         return res.status(400).send('Enter a valid username.');
     }
 
-    const userRecord = getUserRecord(username.toLowerCase());
+    const store = readUserStore();
+    const userKey = username.toLowerCase();
+    const userRecord = store.users[userKey];
     if (!userRecord) {
         return res.status(401).send('Invalid username or password.');
     }
 
-    const hash = hashPassword(password, userRecord.salt);
-    if (hash !== userRecord.passwordHash) {
+    const { valid, updated } = verifyAndUpdatePassword(store, userKey, password);
+    if (!valid) {
         return res.status(401).send('Invalid username or password.');
     }
 
-    issueSession(res, username.toLowerCase());
+    if (updated) {
+        writeUserStore(store);
+    }
+
+    issueSession(res, userKey);
     res.redirect('/');
 });
 
 app.post('/logout', (req, res) => {
     const sessionId = req.cookies[SESSION_COOKIE_NAME];
     if (sessionId) {
-        sessions.delete(sessionId);
+        sessionStore.delete(sessionId);
     }
-    res.setHeader('Set-Cookie', `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+    setCookie(res, SESSION_COOKIE_NAME, '', {
+        httpOnly: true,
+        sameSite: 'Strict',
+        maxAge: 0,
+        secure: COOKIE_SECURE
+    });
+    setCookie(res, CSRF_COOKIE_NAME, '', {
+        sameSite: 'Strict',
+        maxAge: 0,
+        secure: COOKIE_SECURE
+    });
     res.status(204).end();
 });
 
@@ -627,9 +764,108 @@ function checkForWinner(gameState) {
 }
 
 function issueSession(res, usernameKey) {
-    const sessionId = crypto.randomUUID();
-    sessions.set(sessionId, { id: sessionId, username: usernameKey, createdAt: Date.now() });
-    res.setHeader('Set-Cookie', `${SESSION_COOKIE_NAME}=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
+    const session = sessionStore.create(usernameKey);
+    if (!session) return;
+    setCookie(res, SESSION_COOKIE_NAME, session.id, {
+        httpOnly: true,
+        sameSite: 'Strict',
+        maxAge: Math.floor(SESSION_TTL_MS / 1000),
+        secure: COOKIE_SECURE
+    });
+    if (session.csrfToken) {
+        setCookie(res, CSRF_COOKIE_NAME, session.csrfToken, {
+            sameSite: 'Strict',
+            maxAge: Math.floor(SESSION_TTL_MS / 1000),
+            secure: COOKIE_SECURE
+        });
+    }
+}
+
+function setCookie(res, name, value, options = {}) {
+    const segments = [`${name}=${encodeURIComponent(value)}`];
+    segments.push(`Path=${options.path || '/'}`);
+    if (typeof options.maxAge === 'number') {
+        segments.push(`Max-Age=${options.maxAge}`);
+        if (options.maxAge === 0) {
+            segments.push('Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+        }
+    }
+    if (options.httpOnly) {
+        segments.push('HttpOnly');
+    }
+    if (options.sameSite) {
+        segments.push(`SameSite=${options.sameSite}`);
+    }
+    if (options.secure) {
+        segments.push('Secure');
+    }
+    if (options.domain) {
+        segments.push(`Domain=${options.domain}`);
+    }
+    appendCookie(res, segments.join('; '));
+}
+
+function appendCookie(res, cookieValue) {
+    const existing = res.getHeader('Set-Cookie');
+    if (!existing) {
+        res.setHeader('Set-Cookie', cookieValue);
+    } else if (Array.isArray(existing)) {
+        res.setHeader('Set-Cookie', [...existing, cookieValue]);
+    } else {
+        res.setHeader('Set-Cookie', [existing, cookieValue]);
+    }
+}
+
+function ensureCsrfToken(req, res) {
+    const cookieToken = req.cookies[CSRF_COOKIE_NAME];
+    if (req.session) {
+        let sessionToken = req.session.csrfToken;
+        if (!sessionToken) {
+            sessionToken = crypto.randomBytes(32).toString('hex');
+            req.session.csrfToken = sessionToken;
+            sessionStore.update(req.session.id, { csrfToken: sessionToken });
+        }
+        if (cookieToken !== sessionToken) {
+            setCookie(res, CSRF_COOKIE_NAME, sessionToken, {
+                sameSite: 'Strict',
+                maxAge: Math.floor(SESSION_TTL_MS / 1000),
+                secure: COOKIE_SECURE
+            });
+        }
+        return sessionToken;
+    }
+
+    if (cookieToken && /^[a-f0-9]{64}$/i.test(cookieToken)) {
+        return cookieToken;
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    setCookie(res, CSRF_COOKIE_NAME, token, {
+        sameSite: 'Strict',
+        maxAge: Math.floor(SESSION_TTL_MS / 1000),
+        secure: COOKIE_SECURE
+    });
+    return token;
+}
+
+function csrfProtection(req, res, next) {
+    const method = (req.method || 'GET').toUpperCase();
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+        const headerToken = req.get('x-csrf-token');
+        const bodyToken = req.body?._csrf;
+        const requestToken = headerToken || bodyToken;
+        const cookieToken = req.cookies?.[CSRF_COOKIE_NAME];
+        const sessionToken = req.session?.csrfToken;
+        const valid =
+            requestToken &&
+            cookieToken &&
+            requestToken === cookieToken &&
+            (!sessionToken || requestToken === sessionToken);
+        if (!valid) {
+            return res.status(403).send('Invalid or missing CSRF token.');
+        }
+    }
+    next();
 }
 
 function parseCookies(cookieHeader) {
@@ -680,8 +916,76 @@ function getUserRecord(usernameKey) {
     return store.users[usernameKey.toLowerCase()] || null;
 }
 
-function hashPassword(password, salt) {
+function hashPassword(password) {
+    const salt = crypto.randomBytes(16);
+    const derivedKey = crypto.scryptSync(password, salt, SCRYPT_KEY_LENGTH, SCRYPT_PARAMS);
+    return ['scrypt', SCRYPT_PARAMS.N, SCRYPT_PARAMS.r, SCRYPT_PARAMS.p, salt.toString('base64'), derivedKey.toString('base64')].join('$');
+}
+
+function legacyHashPassword(password, salt) {
     return crypto.createHash('sha256').update(`${password}:${salt}`).digest('hex');
+}
+
+function parseScryptHash(hash) {
+    if (typeof hash !== 'string') {
+        return null;
+    }
+    const parts = hash.split('$');
+    if (parts.length !== 6 || parts[0] !== 'scrypt') {
+        return null;
+    }
+    const [ , nStr, rStr, pStr, saltB64, keyB64 ] = parts;
+    const N = Number.parseInt(nStr, 10);
+    const r = Number.parseInt(rStr, 10);
+    const p = Number.parseInt(pStr, 10);
+    if (!Number.isFinite(N) || !Number.isFinite(r) || !Number.isFinite(p)) {
+        return null;
+    }
+    try {
+        const salt = Buffer.from(saltB64, 'base64');
+        const key = Buffer.from(keyB64, 'base64');
+        if (!salt.length || !key.length) {
+            return null;
+        }
+        return { N, r, p, salt, key };
+    } catch (error) {
+        return null;
+    }
+}
+
+function verifyScryptPassword(password, hash) {
+    const parsed = parseScryptHash(hash);
+    if (!parsed) {
+        return false;
+    }
+    const derived = crypto.scryptSync(password, parsed.salt, parsed.key.length, {
+        N: parsed.N,
+        r: parsed.r,
+        p: parsed.p
+    });
+    return crypto.timingSafeEqual(parsed.key, derived);
+}
+
+function verifyAndUpdatePassword(store, usernameKey, password) {
+    const record = store.users[usernameKey];
+    if (!record) {
+        return { valid: false, updated: false };
+    }
+
+    if (parseScryptHash(record.passwordHash)) {
+        return { valid: verifyScryptPassword(password, record.passwordHash), updated: false };
+    }
+
+    if (record.salt) {
+        const expected = legacyHashPassword(password, record.salt);
+        if (expected === record.passwordHash) {
+            record.passwordHash = hashPassword(password);
+            delete record.salt;
+            return { valid: true, updated: true };
+        }
+    }
+
+    return { valid: false, updated: false };
 }
 
 function incrementUserWins(accountName) {
