@@ -375,7 +375,14 @@ app.post('/api/profile/avatar', requireAuth, (req, res) => {
             const safeBaseName = req.user.username.replace(/[^a-zA-Z0-9_-]/g, '');
             const finalName = `${safeBaseName || 'avatar'}-${timestamp}${fileInfo.extension}`;
             const finalPath = path.join(UPLOAD_DIR, finalName);
-            fs.writeFileSync(finalPath, fileInfo.buffer);
+            const uploadRoot = path.resolve(UPLOAD_DIR);
+            const resolvedPath = path.resolve(finalPath);
+            const relativePath = path.relative(uploadRoot, resolvedPath);
+            if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+                throw new Error('Resolved path escapes upload directory.');
+            }
+
+            fs.writeFileSync(resolvedPath, fileInfo.buffer, { mode: 0o600 });
 
             updateUserAvatar(req.session.username, `/uploads/profiles/${finalName}`);
             res.json({ avatarPath: `/uploads/profiles/${finalName}` });
@@ -1014,6 +1021,34 @@ function updateUserAvatar(usernameKey, avatarPath) {
     writeUserStore(store);
 }
 
+function detectImageExtension(buffer) {
+    if (!buffer || buffer.length < 4) {
+        return null;
+    }
+
+    if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47 &&
+        buffer[4] === 0x0d && buffer[5] === 0x0a && buffer[6] === 0x1a && buffer[7] === 0x0a) {
+        return '.png';
+    }
+
+    if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+        const end = buffer.length;
+        if (end >= 2 && buffer[end - 2] === 0xff && buffer[end - 1] === 0xd9) {
+            return '.jpg';
+        }
+    }
+
+    if (buffer.length >= 4 && buffer.toString('ascii', 0, 4) === 'GIF8') {
+        return '.gif';
+    }
+
+    if (buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') {
+        return '.webp';
+    }
+
+    return null;
+}
+
 function extractMultipartFile(buffer, boundary) {
     const boundaryText = `--${boundary}`;
     const boundaryBuffer = Buffer.from(boundaryText);
@@ -1048,22 +1083,13 @@ function extractMultipartFile(buffer, boundary) {
 
     const fileBuffer = buffer.slice(contentStart, fileEnd);
     const filenameMatch = headers.match(/filename="([^"]*)"/i);
-    const contentTypeMatch = headers.match(/Content-Type:\s*([^\r\n]+)/i);
     const filename = filenameMatch ? path.basename(filenameMatch[1]) : `upload-${Date.now()}`;
-    const ext = path.extname(filename).toLowerCase();
-    const allowedExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
-    const safeExtension = allowedExtensions.includes(ext) ? ext : '.png';
-    const contentType = contentTypeMatch ? contentTypeMatch[1].trim() : 'application/octet-stream';
-
-    if (!allowedExtensions.includes(ext) && contentType.startsWith('image/')) {
-        const subtype = contentType.split('/')[1] || 'png';
-        const derivedExt = `.${subtype.toLowerCase()}`;
-        if (allowedExtensions.includes(derivedExt)) {
-            return { buffer: fileBuffer, extension: derivedExt };
-        }
+    const detectedExtension = detectImageExtension(fileBuffer);
+    if (!detectedExtension) {
+        throw new Error(`Unsupported image type for file ${filename}`);
     }
 
-    return { buffer: fileBuffer, extension: safeExtension };
+    return { buffer: fileBuffer, extension: detectedExtension };
 }
 
 const PORT = process.env.PORT || 8081;

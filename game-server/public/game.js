@@ -212,7 +212,7 @@ function saveAndEmitDisplayName() {
     applyDisplayName(raw, { showStatus: false });
 }
 
-function applyDisplayName(rawValue, { showStatus = true, persist = true } = {}) {
+function applyDisplayName(rawValue, { showStatus = true, persist = true, updateSession = true, syncSocket = true } = {}) {
     const sanitized = sanitizeName(rawValue).slice(0, 24);
     if (!sanitized) {
         if (showStatus) {
@@ -233,11 +233,11 @@ function applyDisplayName(rawValue, { showStatus = true, persist = true } = {}) 
     if (persist) {
         persistDisplayNameToServer(sanitized);
     }
-    if (sessionProfile) {
+    if (updateSession && sessionProfile) {
         sessionProfile.displayName = sanitized;
     }
 
-    if (socket.connected) {
+    if (socket.connected && syncSocket) {
         socket.emit('setUsername', sanitized);
         if (sessionProfile) {
             socket.emit('linkAccount', {
@@ -277,16 +277,11 @@ function clearNameStatus() {
 }
 
 function storeDisplayName(name) {
-    try {
-        localStorage.setItem(NAME_STORAGE_KEY, name);
-    } catch (error) {
-        console.warn('Unable to persist display name to storage.', error);
+    if (!name) {
+        removeLocalStorageItem(NAME_STORAGE_KEY);
+        return;
     }
-    try {
-        localStorage.setItem('displayName', name);
-    } catch (error) {
-        console.warn('Unable to persist display name to storage (displayName key).', error);
-    }
+    setLocalStorageItem(NAME_STORAGE_KEY, name);
 }
 
 function persistDisplayNameToServer(name) {
@@ -301,13 +296,7 @@ function persistDisplayNameToServer(name) {
 }
 
 function readStoredName() {
-    try {
-        const preferred = localStorage.getItem('displayName');
-        if (preferred) return preferred;
-        return localStorage.getItem(NAME_STORAGE_KEY) || '';
-    } catch (error) {
-        return '';
-    }
+    return getLocalStorageItem(NAME_STORAGE_KEY) || '';
 }
 
 function setupProfileEvents() {
@@ -387,6 +376,50 @@ function bootstrapProfile() {
     loadSessionProfile();
 }
 
+function normalizeSessionProfile(profile) {
+    if (!profile) return null;
+    const username = sanitizeName(profile.username || '') || DEFAULT_GUEST_NAME;
+    const displayName = sanitizeName(profile.displayName || username) || DEFAULT_GUEST_NAME;
+    const wins = Number(profile.wins);
+    return {
+        username,
+        displayName,
+        wins: Number.isFinite(wins) ? Math.max(0, Math.floor(wins)) : 0,
+        avatarPath: profile.avatarPath || null
+    };
+}
+
+function setSessionProfile(profile) {
+    sessionProfile = profile ? normalizeSessionProfile(profile) : null;
+    return sessionProfile;
+}
+
+function linkSocketWithProfile(profile) {
+    if (!profile || !socket.connected) return;
+    socket.emit('linkAccount', {
+        accountName: profile.username,
+        displayName: profile.displayName
+    });
+}
+
+function handleAuthenticatedSession(rawProfile) {
+    const normalized = setSessionProfile(rawProfile);
+    if (!normalized) {
+        handleUnauthenticated();
+        return;
+    }
+    toggleProfileActions({ authenticated: true });
+    applyDisplayName(normalized.displayName, {
+        showStatus: false,
+        persist: false,
+        updateSession: false,
+        syncSocket: false
+    });
+    updateProfileUI(normalized);
+    maybeShowProfilePrompt(normalized);
+    linkSocketWithProfile(normalized);
+}
+
 async function loadSessionProfile() {
     try {
         const response = await fetch('/api/session', { headers: { 'Accept': 'application/json' } });
@@ -398,16 +431,7 @@ async function loadSessionProfile() {
             handleUnauthenticated();
             return;
         }
-
-        sessionProfile = data.user;
-        updateProfileUI(sessionProfile);
-        toggleProfileActions({ authenticated: true });
-        socket.emit('linkAccount', {
-            accountName: sessionProfile.username,
-            displayName: sessionProfile.displayName
-        });
-        applyDisplayName(sessionProfile.displayName, { showStatus: false, persist: false });
-        maybeShowProfilePrompt(sessionProfile);
+        handleAuthenticatedSession(data.user);
     } catch (error) {
         console.warn('Failed to load session profile.', error);
         handleUnauthenticated();
@@ -415,8 +439,18 @@ async function loadSessionProfile() {
 }
 
 function handleUnauthenticated() {
+    setSessionProfile(null);
     toggleProfileActions({ authenticated: false });
-    updateProfileUI({ username: DEFAULT_GUEST_NAME, displayName: DEFAULT_GUEST_NAME, wins: 0, avatarPath: null });
+    const fallbackName = sanitizeName(readStoredName()) || DEFAULT_GUEST_NAME;
+    applyDisplayName(fallbackName, {
+        showStatus: false,
+        persist: false,
+        updateSession: false,
+        syncSocket: false
+    });
+    clearLocalAvatarPath();
+    updateProfileUI({ username: DEFAULT_GUEST_NAME, displayName: fallbackName, wins: 0, avatarPath: null });
+    hideProfilePrompt(false);
 }
 
 function toggleProfileActions({ authenticated }) {
@@ -431,31 +465,27 @@ function toggleProfileActions({ authenticated }) {
 }
 
 function updateProfileUI(profile) {
-    if (!profile) return;
-    const resolvedName = sanitizeName(profile.displayName || profile.username || DEFAULT_GUEST_NAME) || DEFAULT_GUEST_NAME;
-    myDisplayName = resolvedName;
+    const normalized = normalizeSessionProfile(profile) || {
+        username: DEFAULT_GUEST_NAME,
+        displayName: DEFAULT_GUEST_NAME,
+        wins: 0,
+        avatarPath: null
+    };
+
     if (profileEls.displayName) {
-        profileEls.displayName.textContent = resolvedName;
+        profileEls.displayName.textContent = normalized.displayName;
     }
-    if (identityEls.input) {
-        identityEls.input.value = resolvedName;
-    }
-    if (displayNameInput) {
-        displayNameInput.value = resolvedName;
-    }
-    updateNamePreview(resolvedName);
-    storeDisplayName(resolvedName);
 
-    const winsValue = Number(profile.wins) || 0;
     if (profileEls.wins) {
-        profileEls.wins.textContent = winsValue;
+        profileEls.wins.textContent = normalized.wins;
     }
 
-    const storedAvatar = readLocalAvatarPath();
-    const avatarPath = storedAvatar || profile.avatarPath || DEFAULT_AVATAR_PATH;
+    const shouldUseStoredAvatar = Boolean(sessionProfile && !normalized.avatarPath);
+    const storedAvatar = shouldUseStoredAvatar ? readLocalAvatarPath() : null;
+    const avatarPath = normalized.avatarPath || storedAvatar || DEFAULT_AVATAR_PATH;
     setAvatar(avatarPath);
-    if (profile.avatarPath) {
-        persistLocalAvatarPath(profile.avatarPath);
+    if (sessionProfile && normalized.avatarPath) {
+        persistLocalAvatarPath(normalized.avatarPath);
     }
 }
 
@@ -478,6 +508,10 @@ function persistLocalAvatarPath(path) {
 
 function readLocalAvatarPath() {
     return getLocalStorageItem(AVATAR_STORAGE_KEY);
+}
+
+function clearLocalAvatarPath() {
+    removeLocalStorageItem(AVATAR_STORAGE_KEY);
 }
 
 function hideProfilePrompt(remember = false) {
@@ -558,6 +592,14 @@ function setLocalStorageItem(key, value) {
         localStorage.setItem(key, value);
     } catch (error) {
         console.warn('Unable to persist localStorage value.', error);
+    }
+}
+
+function removeLocalStorageItem(key) {
+    try {
+        localStorage.removeItem(key);
+    } catch (error) {
+        console.warn('Unable to remove localStorage value.', error);
     }
 }
 
