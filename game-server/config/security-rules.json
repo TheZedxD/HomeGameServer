@@ -1,0 +1,44 @@
+{
+  "include": [
+    "server.js",
+    "src",
+    "lib",
+    "tests"
+  ],
+  "exclude": [
+    "src/plugins",
+    "tests/fixtures"
+  ],
+  "rules": [
+    {
+      "id": "no-eval",
+      "description": "Avoid using eval() for untrusted content.",
+      "pattern": "\\beval\\s*\\(",
+      "severity": "error"
+    },
+    {
+      "id": "no-function-constructor",
+      "description": "Avoid Function constructor which can execute arbitrary code.",
+      "pattern": "new\\s+Function\\s*\\(",
+      "severity": "error"
+    },
+    {
+      "id": "no-child-process-exec",
+      "description": "Child process execution must be audited.",
+      "pattern": "child_process\\.(exec|execFile|spawn|fork)",
+      "severity": "warning"
+    },
+    {
+      "id": "no-insecure-random",
+      "description": "Use crypto.randomBytes instead of Math.random for security-sensitive operations.",
+      "pattern": "Math\\.random",
+      "severity": "warning"
+    },
+    {
+      "id": "no-http-url",
+      "description": "External service calls should use HTTPS.",
+      "pattern": "http://",
+      "severity": "warning"
+    }
+  ]
+}
