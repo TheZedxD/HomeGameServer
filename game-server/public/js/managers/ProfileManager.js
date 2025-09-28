@@ -1,5 +1,6 @@
 import { sanitizeName } from '../utils/validation.js';
 import { CsrfService } from '../utils/csrf.js';
+import { ErrorHandler } from '../utils/ErrorHandler.js';
 import {
   getLocalStorageItem,
   setLocalStorageItem,
@@ -95,10 +96,16 @@ export class ProfileManager {
 
   async loadProfile() {
     try {
-      const response = await fetch('/api/session', { headers: { Accept: 'application/json' } });
-      if (!response.ok) {
-        throw new Error('Unable to load profile.');
-      }
+      const response = await ErrorHandler.handleAsyncOperation(async () => {
+        const sessionResponse = await fetch('/api/session', { headers: { Accept: 'application/json' } });
+        if (!sessionResponse.ok) {
+          const error = new Error(`HTTP ${sessionResponse.status}`);
+          error.status = sessionResponse.status;
+          throw error;
+        }
+        return sessionResponse;
+      }, 'profile load');
+
       const data = await response.json();
       if (data?.authenticated && data.user) {
         this.profile = this.normalizeProfile(data.user, { isGuest: false });
@@ -133,15 +140,23 @@ export class ProfileManager {
 
     if (!this.profile.isGuest) {
       try {
-        const response = await this.csrfFetch('/api/profile', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ displayName: sanitized })
-        });
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText || 'Request failed');
-        }
+        await ErrorHandler.handleAsyncOperation(async () => {
+          const response = await this.csrfFetch(
+            '/api/profile',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ displayName: sanitized })
+            },
+            { operationName: 'profile update', showUserError: false }
+          );
+          if (!response.ok) {
+            const error = new Error(`HTTP ${response.status}`);
+            error.status = response.status;
+            throw error;
+          }
+          await response.json();
+        }, 'profile update');
       } catch (error) {
         console.warn('Failed to save to server:', error);
         return {

@@ -41,6 +41,7 @@ self.addEventListener('fetch', (event) => {
       }
       return networkResponse;
     } catch (error) {
+      console.error('Service worker fetch failed:', error);
       const cache = await caches.open(CACHE_NAME);
       const cachedResponse = await cache.match(event.request);
       if (cachedResponse) {

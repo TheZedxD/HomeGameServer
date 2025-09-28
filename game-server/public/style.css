@@ -534,6 +534,20 @@ a {
   color: var(--win2k-muted);
 }
 
+.form-errors {
+  border: 2px solid #8b0000;
+  background: rgba(139, 0, 0, 0.12);
+  color: #3b0000;
+  padding: 8px 10px;
+  border-radius: 2px;
+  font-size: 0.9rem;
+}
+
+.form-errors p {
+  margin: 0;
+  line-height: 1.4;
+}
+
 .input-label {
   font-weight: bold;
 }

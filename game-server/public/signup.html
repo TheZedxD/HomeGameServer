@@ -15,6 +15,8 @@
             <h1 id="signup-title" class="auth-title">Join the Game Hub</h1>
             <p class="auth-subtitle">Create your profile to start playing and tracking your wins.</p>
 
+            <div class="form-errors hidden" role="alert" aria-live="assertive"></div>
+
             <label for="signup-username" class="input-label">Username</label>
             <input id="signup-username" name="username" class="input-field" type="text" autocomplete="username" required maxlength="24" aria-describedby="username-help">
             <small id="username-help" class="help-text">Letters, numbers, hyphens, and underscores only.</small>
@@ -33,25 +35,6 @@
             </div>
         </form>
     </main>
-    <script>
-        document.addEventListener('DOMContentLoaded', async () => {
-            const field = document.getElementById('csrf-token');
-            if (!field) return;
-            try {
-                const response = await fetch('/api/csrf-token', {
-                    credentials: 'include',
-                    headers: { 'Accept': 'application/json' }
-                });
-                if (!response.ok) {
-                    throw new Error('Failed to obtain CSRF token.');
-                }
-                const data = await response.json();
-                field.value = typeof data?.token === 'string' ? data.token : '';
-            } catch (error) {
-                console.error('Unable to load CSRF token.', error);
-                field.value = '';
-            }
-        });
-    </script>
+    <script type="module" src="/js/pages/auth.js"></script>
 </body>
 </html>
