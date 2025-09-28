@@ -4,7 +4,8 @@
   "description": "A local multiplayer game server with themed UI",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node tests/runAll.js"
   },
   "dependencies": {
     "connect-session-file": "^1.0.0",
