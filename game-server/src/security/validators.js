@@ -1,5 +1,7 @@
 'use strict';
 
+const { containsProfanity } = require('./profanityFilter');
+
 const ACCOUNT_NAME_REGEX = /^[a-zA-Z0-9_-]{3,24}$/;
 const DISPLAY_NAME_REGEX = /^[\p{L}\p{N} _'’.-]{1,24}$/u;
 const ROOM_CODE_REGEX = /^[A-Z0-9]{3,10}$/;
@@ -11,7 +13,7 @@ function normalizeWhitespace(value) {
         .trim();
 }
 
-function validateDisplayNameInput(name) {
+function validateDisplayNameInput(name, options = {}) {
     if (name === undefined || name === null) {
         return { value: null, error: 'Display name must contain at least one visible character.' };
     }
@@ -33,11 +35,22 @@ function validateDisplayNameInput(name) {
         };
     }
 
+    if (!options.allowProfanity && containsProfanity(normalized)) {
+        return { value: null, error: 'Display name contains inappropriate language.' };
+    }
+
+    if (typeof options.uniquenessCheck === 'function') {
+        const conflict = options.uniquenessCheck(normalized);
+        if (conflict && (!options.currentUsername || conflict !== options.currentUsername.toLowerCase())) {
+            return { value: null, error: 'Display name is already in use.' };
+        }
+    }
+
     return { value: normalized, error: null };
 }
 
-function sanitizeDisplayName(name) {
-    const { value } = validateDisplayNameInput(name);
+function sanitizeDisplayName(name, options = {}) {
+    const { value } = validateDisplayNameInput(name, options);
     return value;
 }
 

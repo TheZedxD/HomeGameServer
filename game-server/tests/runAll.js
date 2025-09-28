@@ -1,6 +1,8 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const {
     GameRegistry,
@@ -10,6 +12,11 @@ const {
     InMemoryGameRepository,
     PlayerManager,
 } = require('../src/core');
+const { createProfileService } = require('../src/profile/profileService');
+const { processAvatar } = require('../src/profile/avatarProcessor');
+const { validateDisplayNameInput } = require('../src/security/validators');
+
+const SAMPLE_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQImWNgYGD4DwABBAEAH0UBPwAAAABJRU5ErkJggg==', 'base64');
 
 const tests = [];
 function test(name, fn) {
@@ -130,6 +137,49 @@ test('GameRoomManager plays Checkers with capture and promotion rules', async ()
     assert.strictEqual(state.turn, 'guest', 'Turn should pass to opponent after capture');
     assert.strictEqual(state.players.host.color, 'red');
     assert.strictEqual(state.players.guest.color, 'black');
+});
+
+test('ProfileService enforces display name uniqueness', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-service-'));
+    const dataFile = path.join(tmpDir, 'users.json');
+    const service = createProfileService({
+        dataFile,
+        cacheOptions: {},
+        analyticsOptions: {},
+        cacheTtlMs: 5,
+        logger: createLogger(),
+    });
+    service.initialize();
+    try {
+        service.upsert('player1', { username: 'player1', displayName: 'Hero', passwordHash: 'hash' });
+        service.upsert('player2', { username: 'player2', displayName: 'Champion', passwordHash: 'hash' });
+
+        const conflict = service.ensureDisplayNameAvailability('Hero', 'player2');
+        assert.strictEqual(conflict, 'player1');
+
+        const invalid = validateDisplayNameInput('Hero', {
+            currentUsername: 'player2',
+            uniquenessCheck: (value) => service.ensureDisplayNameAvailability(value, 'player2'),
+        });
+        assert.ok(invalid.error, 'Expected duplicate display name to be rejected');
+
+        const valid = validateDisplayNameInput('Adventurer', {
+            currentUsername: 'player2',
+            uniquenessCheck: (value) => service.ensureDisplayNameAvailability(value, 'player2'),
+        });
+        assert.strictEqual(valid.error, null);
+    } finally {
+        await service.shutdown();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('Avatar processor normalizes output images', async () => {
+    const result = await processAvatar(SAMPLE_PNG, { maxDimension: 32, outputFormat: 'webp' });
+    assert.strictEqual(result.format, 'webp');
+    assert.ok(result.outputWidth <= 32);
+    assert.ok(result.outputHeight <= 32);
+    assert.ok(result.buffer.length > 0, 'Processed avatar should have data');
 });
 
 (async () => {
