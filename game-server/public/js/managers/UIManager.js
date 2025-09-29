@@ -111,7 +111,39 @@ export class UIManager {
   }
 
   updateMatchLobby(room, myPlayerId) {
-    this.lobbyUI.updateMatchLobby(room, myPlayerId, (player, fallback) =>
+    if (!room || typeof room !== 'object') {
+      console.warn('Received invalid room payload for lobby update.', room);
+      return;
+    }
+
+    const normalizedPlayers = (() => {
+      if (!room.players) {
+        return {};
+      }
+      if (Array.isArray(room.players)) {
+        return room.players.reduce((acc, player = {}) => {
+          const playerId =
+            player.id || player.playerId || player.socketId || player.uuid || player._id;
+          if (playerId) {
+            acc[playerId] = player;
+          }
+          return acc;
+        }, {});
+      }
+      if (typeof room.players === 'object') {
+        return room.players;
+      }
+      return {};
+    })();
+
+    const normalizedRoom = {
+      gameType: room.gameType || room.gameName || room.metadata?.name || 'Match',
+      players: normalizedPlayers,
+      hostId: room.hostId || room.host?.id || null,
+      maxPlayers: room.maxPlayers || room.playerLimit || Object.keys(normalizedPlayers).length || 2
+    };
+
+    this.lobbyUI.updateMatchLobby(normalizedRoom, myPlayerId, (player, fallback) =>
       this.derivePlayerLabel(player, fallback)
     );
   }

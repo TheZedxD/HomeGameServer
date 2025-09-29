@@ -68,12 +68,14 @@ export class GameManager {
       this.uiManager.renderRoomList(openRooms);
     });
     this.socket.on('joinedMatchLobby', ({ room, yourId }) => {
+      console.log('Joined match lobby:', room, 'My ID:', yourId);
       this.myPlayerId = yourId;
       this.uiManager.updateMatchLobby(room, this.myPlayerId);
       this.uiManager.setScoreboardVisibility(false);
       this.uiManager.showView('matchLobby');
     });
     this.socket.on('roomStateUpdate', (room) => {
+      console.log('Room state update received:', room);
       this.uiManager.updateMatchLobby(room, this.myPlayerId);
       this.syncCurrentPlayersWithRoom(room);
     });
