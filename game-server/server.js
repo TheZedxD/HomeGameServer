@@ -1134,12 +1134,17 @@ io.on('connection', (socket) => {
     socket.on('linkAccount', handleLinkAccount);
     socket.on('setUsername', handleSetUsername);
 
-    modularGameServer.attachSocket(socket, {
-        getPlayer: () => players.get(socket),
-        setPlayerRoom: (roomId) => {
-            const player = players.get(socket);
-            if (!player) return;
+    const getPlayer = () => {
+        const p = players.get(socket);
+        console.log('getPlayer called:', socket.id, p);
+        return p;
+    };
+
+    const setPlayerRoom = (roomId) => {
+        const player = players.get(socket);
+        if (player) {
             player.inRoom = roomId;
+            console.log('Player room set:', socket.id, roomId);
 
             if (player.guestId) {
                 guestSessionManager.recordLastRoom(player.guestId, {
@@ -1149,12 +1154,20 @@ io.on('connection', (socket) => {
             }
 
             syncPlayerInRoom(socket);
-        },
-        clearPlayerRoom: () => {
-            const player = players.get(socket);
-            if (!player) return;
-            player.inRoom = null;
-        },
+        }
+    };
+
+    const clearPlayerRoom = () => {
+        const player = players.get(socket);
+        if (!player) return;
+        player.inRoom = null;
+        console.log('Player room cleared:', socket.id);
+    };
+
+    modularGameServer.attachSocket(socket, {
+        getPlayer,
+        setPlayerRoom,
+        clearPlayerRoom,
     });
 
     const handleDisconnect = () => {
