@@ -49,6 +49,32 @@ const modularGameServer = createModularGameServer({
     pluginDirectory: path.join(__dirname, 'src/plugins'),
 });
 
+function emitSocketError({ socket, player, action, error, message = 'Operation failed. Please try again.', code = 'OPERATION_FAILED' }) {
+    const context = {
+        userId: socket?.id || null,
+        room: player?.inRoom || null,
+        action,
+    };
+
+    console.error(`[Socket] ${action} failed`, {
+        error: error?.message,
+        stack: error?.stack,
+        context,
+    });
+
+    if (typeof metricsCollector?.recordError === 'function') {
+        metricsCollector.recordError(error, { eventName: action, transport: 'socket.io', ...context });
+    }
+
+    if (socket?.connected) {
+        socket.emit('error', {
+            message,
+            code,
+            action,
+        });
+    }
+}
+
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const IS_PRODUCTION = NODE_ENV === 'production';
 
@@ -969,50 +995,94 @@ io.on('connection', (socket) => {
         const player = players.get(socket);
         if (!player) return;
 
-        const sanitizedAccount = sanitizeAccountName(accountName || '');
-        const displayCandidate = displayName || sanitizedAccount || '';
-        const { value: sanitizedDisplay } = validateDisplayNameInput(displayCandidate, {
-            currentUsername: sanitizedAccount,
-            uniquenessCheck: (value) => profileService.ensureDisplayNameAvailability(value, sanitizedAccount),
-        });
+        const previousState = player;
+        let stateApplied = false;
+        try {
+            const sanitizedAccount = sanitizeAccountName(accountName || '');
+            const displayCandidate = displayName || sanitizedAccount || '';
+            const { value: sanitizedDisplay } = validateDisplayNameInput(displayCandidate, {
+                currentUsername: sanitizedAccount,
+                uniquenessCheck: (value) => profileService.ensureDisplayNameAvailability(value, sanitizedAccount),
+            });
 
-        if (sanitizedAccount) {
-            player.account = sanitizedAccount;
+            const nextState = { ...player };
+            if (sanitizedAccount) {
+                nextState.account = sanitizedAccount;
+            }
+
+            if (sanitizedDisplay) {
+                nextState.username = sanitizedDisplay;
+            } else if (sanitizedAccount) {
+                nextState.username = sanitizedAccount;
+            }
+
+            players.set(socket, nextState);
+            socket.data.playerState = nextState;
+            stateApplied = true;
+
+            if (nextState.guestId) {
+                guestSessionManager.recordDisplayName(nextState.guestId, nextState.username);
+            }
+
+            syncPlayerInRoom(socket);
+        } catch (error) {
+            if (stateApplied) {
+                players.set(socket, previousState);
+                socket.data.playerState = previousState;
+            }
+            emitSocketError({
+                socket,
+                player,
+                action: 'linkAccount',
+                error,
+                message: 'Unable to link account at this time. Please try again.',
+                code: 'LINK_ACCOUNT_FAILED',
+            });
         }
-
-        if (sanitizedDisplay) {
-            player.username = sanitizedDisplay;
-        } else if (sanitizedAccount) {
-            player.username = sanitizedAccount;
-        }
-
-        if (player.guestId) {
-            guestSessionManager.recordDisplayName(player.guestId, player.username);
-        }
-
-        syncPlayerInRoom(socket);
     };
 
     const handleSetUsername = (rawName) => {
         const player = players.get(socket);
         if (!player) return;
 
-        const { value: sanitized, error } = validateDisplayNameInput(rawName, {
-            currentUsername: player.account,
-            uniquenessCheck: (value) => profileService.ensureDisplayNameAvailability(value, player.account),
-        });
+        const previousState = player;
+        let stateApplied = false;
+        try {
+            const { value: sanitized, error } = validateDisplayNameInput(rawName, {
+                currentUsername: player.account,
+                uniquenessCheck: (value) => profileService.ensureDisplayNameAvailability(value, player.account),
+            });
 
-        if (sanitized) {
-            player.username = sanitized;
-        } else if (error && !player.username) {
-            player.username = 'Guest';
+            const nextState = { ...player };
+            if (sanitized) {
+                nextState.username = sanitized;
+            } else if (error && !player.username) {
+                nextState.username = 'Guest';
+            }
+
+            players.set(socket, nextState);
+            socket.data.playerState = nextState;
+            stateApplied = true;
+
+            if (nextState.guestId) {
+                guestSessionManager.recordDisplayName(nextState.guestId, nextState.username);
+            }
+
+            syncPlayerInRoom(socket);
+        } catch (error) {
+            if (stateApplied) {
+                players.set(socket, previousState);
+                socket.data.playerState = previousState;
+            }
+            emitSocketError({
+                socket,
+                player,
+                action: 'setUsername',
+                error,
+                message: 'Unable to update username at this time. Please try again.',
+                code: 'SET_USERNAME_FAILED',
+            });
         }
-
-        if (player.guestId) {
-            guestSessionManager.recordDisplayName(player.guestId, player.username);
-        }
-
-        syncPlayerInRoom(socket);
     };
 
     socket.on('linkAccount', handleLinkAccount);
@@ -1042,24 +1112,46 @@ io.on('connection', (socket) => {
     });
 
     const handleDisconnect = () => {
-        console.log(`User disconnected: ${socket.id}`);
-
-        socket.off('linkAccount', handleLinkAccount);
-        socket.off('setUsername', handleSetUsername);
-
         const player = players.get(socket);
-        if (player?.guestId) {
-            guestSessionManager.recordLastRoom(player.guestId, null);
-        }
-        if (player) {
-            player.inRoom = null;
-        }
 
-        players.delete(socket);
-        delete socket.data.playerState;
+        try {
+            console.log(`User disconnected: ${socket.id}`);
 
-        io.emit('updateRoomList', getOpenRooms());
-        metricsCollector.decrementSocketConnections();
+            socket.off('linkAccount', handleLinkAccount);
+            socket.off('setUsername', handleSetUsername);
+
+            if (player?.guestId) {
+                guestSessionManager.recordLastRoom(player.guestId, null);
+            }
+            if (player) {
+                player.inRoom = null;
+            }
+
+            players.delete(socket);
+            delete socket.data.playerState;
+
+            io.emit('updateRoomList', getOpenRooms());
+        } catch (error) {
+            console.error('[Socket] disconnect cleanup failed', {
+                error: error?.message,
+                stack: error?.stack,
+                context: {
+                    userId: socket.id,
+                    room: player?.inRoom || null,
+                    action: 'disconnect',
+                },
+            });
+            if (typeof metricsCollector?.recordError === 'function') {
+                metricsCollector.recordError(error, {
+                    eventName: 'disconnect',
+                    transport: 'socket.io',
+                    userId: socket.id,
+                    room: player?.inRoom || null,
+                });
+            }
+        } finally {
+            metricsCollector.decrementSocketConnections();
+        }
     };
 
     socket.on('disconnect', handleDisconnect);
