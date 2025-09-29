@@ -4,6 +4,7 @@
 
 const express = require('express');
 const http = require('http');
+const net = require('net');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -43,6 +44,8 @@ const { createSessionMaintenance } = require('./src/sessions/sessionMaintenance'
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+const DEFAULT_PORT = 8081;
+let activePort = null;
 const modularGameServer = createModularGameServer({
     io,
     logger: console,
@@ -638,7 +641,8 @@ app.get('/api/network-info', (req, res) => {
     }
 
     const envPort = Number.parseInt(process.env.PORT, 10);
-    const port = Number.isFinite(envPort) ? envPort : 8081;
+    const fallbackPort = Number.isInteger(envPort) && envPort > 0 ? envPort : DEFAULT_PORT;
+    const port = Number.isInteger(activePort) ? activePort : fallbackPort;
 
     res.json({ ip: ipAddress, port });
 });
@@ -1614,5 +1618,89 @@ function extractMultipartFile(buffer, boundary) {
     return { buffer: fileBuffer, filename, originalFilename, contentType };
 }
 
-const PORT = process.env.PORT || 8081;
-server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+function isPortAvailable(port) {
+    return new Promise((resolve, reject) => {
+        const tester = net.createServer()
+            .once('error', (error) => {
+                if (error && (error.code === 'EADDRINUSE' || error.code === 'EACCES')) {
+                    resolve(false);
+                    return;
+                }
+                reject(error);
+            })
+            .once('listening', () => {
+                tester.close(() => resolve(true));
+            });
+
+        tester.unref();
+        tester.listen(port);
+    });
+}
+
+async function findAvailablePort(preferredPort) {
+    if (!Number.isInteger(preferredPort) || preferredPort < 0) {
+        preferredPort = DEFAULT_PORT;
+    }
+
+    if (preferredPort === 0) {
+        return 0;
+    }
+
+    const seenPorts = new Set();
+    const queue = [];
+
+    if (preferredPort > 0) {
+        queue.push(preferredPort);
+        seenPorts.add(preferredPort);
+    }
+
+    if (!seenPorts.has(DEFAULT_PORT)) {
+        queue.push(DEFAULT_PORT);
+        seenPorts.add(DEFAULT_PORT);
+    }
+
+    while (queue.length > 0) {
+        const candidate = queue.shift();
+        if (await isPortAvailable(candidate)) {
+            return candidate;
+        }
+    }
+
+    for (let candidate = DEFAULT_PORT + 1; candidate <= 65535; candidate += 1) {
+        if (seenPorts.has(candidate)) {
+            continue;
+        }
+        if (await isPortAvailable(candidate)) {
+            return candidate;
+        }
+    }
+
+    throw new Error('No available ports found for the server to listen on.');
+}
+
+async function startServer() {
+    try {
+        const requestedPort = Number.parseInt(process.env.PORT, 10);
+        const desiredPort = Number.isInteger(requestedPort) && requestedPort >= 0 ? requestedPort : DEFAULT_PORT;
+        const portToUse = await findAvailablePort(requestedPort);
+
+        if (desiredPort !== portToUse && desiredPort !== 0) {
+            console.warn(`[Startup] Port ${desiredPort} is unavailable. Falling back to ${portToUse}.`);
+        }
+
+        const listener = server.listen(portToUse, () => {
+            activePort = listener.address().port;
+            console.log(`Server listening on port ${activePort}`);
+        });
+
+        listener.on('error', (error) => {
+            console.error('[Startup] Failed to bind server listener.', error);
+            process.exit(1);
+        });
+    } catch (error) {
+        console.error('[Startup] Could not determine an available port for the server.', error);
+        process.exit(1);
+    }
+}
+
+startServer();
