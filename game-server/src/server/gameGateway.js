@@ -10,6 +10,7 @@ const {
     InMemoryGameRepository,
 } = require('../core');
 const { getPluginDirectory } = require('../plugins');
+const { sanitizeRoomCode, sanitizeTextInput } = require('../security/validators');
 
 class ModularGameServer extends EventEmitter {
     constructor({ io, logger = console, pluginDirectory }) {
@@ -96,14 +97,44 @@ class ModularGameServer extends EventEmitter {
         socket.emit('updateRoomList', this._serializeRooms());
         socket.on('createGame', (payload = {}) => {
             try {
-                const { gameType, mode = 'lan', roomCode, minPlayers, maxPlayers } = payload;
-                const definition = this._resolveGameDefinition(gameType);
+                if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+                    throw new Error('Create game payload must be an object.');
+                }
+
+                const rawGameType = payload.gameType;
+                if (typeof rawGameType !== 'string') {
+                    throw new Error('Game type must be a non-empty string.');
+                }
+
+                const sanitizedGameType = sanitizeTextInput(rawGameType, { maxLength: 50 });
+                if (!sanitizedGameType) {
+                    throw new Error('Game type must be a non-empty string.');
+                }
+                if (!/^[a-zA-Z0-9_-]+$/.test(sanitizedGameType)) {
+                    throw new Error('Game type may only contain letters, numbers, underscores, or hyphens.');
+                }
+
+                const definition = this._resolveGameDefinition(sanitizedGameType);
+
+                const sanitizedMode = typeof payload.mode === 'string' ? payload.mode.trim().toLowerCase() : 'lan';
+                const mode = sanitizedMode === 'p2p' ? 'p2p' : 'lan';
+
+                let preferredRoomId;
+                if (payload.roomCode !== undefined && payload.roomCode !== null && payload.roomCode !== '') {
+                    const sanitizedRoomCode = sanitizeRoomCode(String(payload.roomCode));
+                    if (!sanitizedRoomCode) {
+                        throw new Error('Room code must be 3-10 characters using letters A-Z or numbers 0-9.');
+                    }
+                    preferredRoomId = sanitizedRoomCode;
+                }
+
+                const { minPlayers, maxPlayers } = payload;
                 const player = getPlayer();
                 const room = this.roomManager.createRoom({
                     hostId: socket.id,
                     gameId: definition.id,
                     mode,
-                    preferredRoomId: mode === 'p2p' && roomCode ? String(roomCode).toUpperCase() : undefined,
+                    preferredRoomId: mode === 'p2p' ? preferredRoomId : undefined,
                     playerLimits: {
                         minPlayers: minPlayers || definition.minPlayers,
                         maxPlayers: maxPlayers || definition.maxPlayers,
@@ -128,11 +159,18 @@ class ModularGameServer extends EventEmitter {
 
         socket.on('joinGame', async (roomIdRaw) => {
             try {
-                const roomId = String(roomIdRaw || '').trim();
-                if (!roomId) throw new Error('Room does not exist.');
-                const room = this.roomManager.getRoom(roomId) || this.roomManager.getRoom(roomId.toUpperCase());
+                if (typeof roomIdRaw !== 'string') {
+                    throw new Error('Room code must be provided as a string.');
+                }
+
+                const sanitizedRoomId = sanitizeRoomCode(roomIdRaw);
+                if (!sanitizedRoomId) {
+                    throw new Error('Room code must be 3-10 characters using letters A-Z or numbers 0-9.');
+                }
+
+                const room = this.roomManager.getRoom(sanitizedRoomId);
                 if (!room) {
-                    throw new Error(`Room ${roomId.toUpperCase()} does not exist.`);
+                    throw new Error(`Room ${sanitizedRoomId} does not exist.`);
                 }
                 if (room.playerManager.players.size >= room.playerManager.maxPlayers) {
                     throw new Error('Room is full.');
@@ -267,13 +305,19 @@ class ModularGameServer extends EventEmitter {
     }
 
     _resolveGameDefinition(gameType) {
-        if (gameType && this.registry.get(gameType)) {
-            return this.registry.get(gameType);
-        }
         const available = this.registry.list();
         if (!available.length) {
             throw new Error('No games are currently available.');
         }
+
+        if (gameType) {
+            const definition = this.registry.get(gameType);
+            if (!definition) {
+                throw new Error('Selected game type is not available.');
+            }
+            return definition;
+        }
+
         return available[0];
     }
 }

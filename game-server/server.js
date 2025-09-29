@@ -248,6 +248,15 @@ const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
 const SCRYPT_KEY_LENGTH = 64;
 const COOKIE_SECURE = IS_PRODUCTION;
 const MAX_UPLOAD_SIZE = 2 * 1024 * 1024; // 2 MB
+const MAX_ORIGINAL_FILENAME_LENGTH = 150;
+const ALLOWED_AVATAR_MIME_TYPES = new Set([
+    'image/jpeg',
+    'image/jpg',
+    'image/pjpeg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+]);
 const REDIS_URL = process.env.REDIS_URL || null;
 const PROFILE_CACHE_TTL_MS = Number.parseInt(process.env.PROFILE_CACHE_TTL_MS || '15000', 10);
 const PROFILE_CACHE_MAX_ENTRIES = Number.parseInt(process.env.PROFILE_CACHE_MAX_ENTRIES || '2000', 10);
@@ -863,10 +872,30 @@ app.post('/api/profile/avatar', requireAuth, csrfMiddleware, (req, res) => {
                 return res.status(400).json({ error: 'No file provided.' });
             }
 
+            if (fileInfo.originalFilename && fileInfo.originalFilename.length > MAX_ORIGINAL_FILENAME_LENGTH) {
+                return res.status(400).json({ error: 'Original filename is too long.' });
+            }
+
+            const normalizedMime = (fileInfo.contentType || '').toLowerCase();
+            if (normalizedMime && !ALLOWED_AVATAR_MIME_TYPES.has(normalizedMime)) {
+                return res.status(400).json({
+                    error: 'Unsupported avatar file type. Allowed formats are JPEG, PNG, GIF, or WebP.',
+                });
+            }
+
             const processed = await processAvatar(fileInfo.buffer, {
                 maxDimension: AVATAR_MAX_DIMENSION,
                 outputFormat: AVATAR_OUTPUT_FORMAT,
             });
+
+            const processedMime = processed.format === 'jpeg'
+                ? 'image/jpeg'
+                : `image/${processed.format}`;
+            if (!ALLOWED_AVATAR_MIME_TYPES.has(processedMime)) {
+                return res.status(400).json({
+                    error: 'Processed avatar format is not permitted.',
+                });
+            }
 
             const timestamp = Date.now();
             const safeBaseName = req.user.username.replace(/[^a-zA-Z0-9_-]/g, '');
@@ -1502,6 +1531,16 @@ function updateUserAvatar(usernameKey, avatarPath) {
     }
 }
 
+function sanitizeUploadFilename(filename) {
+    if (typeof filename !== 'string') {
+        return 'upload';
+    }
+    const normalized = filename.normalize('NFKC').replace(/\s+/g, '_');
+    const sanitized = normalized.replace(/[^a-zA-Z0-9._-]/g, '');
+    const trimmed = sanitized.slice(0, MAX_ORIGINAL_FILENAME_LENGTH);
+    return trimmed || 'upload';
+}
+
 function extractMultipartFile(buffer, boundary) {
     const boundaryText = `--${boundary}`;
     const boundaryBuffer = Buffer.from(boundaryText);
@@ -1536,9 +1575,12 @@ function extractMultipartFile(buffer, boundary) {
 
     const fileBuffer = buffer.slice(contentStart, fileEnd);
     const filenameMatch = headers.match(/filename="([^"]*)"/i);
-    const filename = filenameMatch ? path.basename(filenameMatch[1]) : `upload-${Date.now()}`;
+    const originalFilename = filenameMatch ? path.basename(filenameMatch[1]) : `upload-${Date.now()}`;
+    const filename = sanitizeUploadFilename(originalFilename);
+    const contentTypeMatch = headers.match(/content-type:\s*([^\r\n;]+)/i);
+    const contentType = contentTypeMatch ? contentTypeMatch[1].trim().toLowerCase() : null;
 
-    return { buffer: fileBuffer, filename };
+    return { buffer: fileBuffer, filename, originalFilename, contentType };
 }
 
 const PORT = process.env.PORT || 8081;
