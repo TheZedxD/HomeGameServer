@@ -103,6 +103,13 @@ class GameRoomManager extends EventEmitter {
             await this.repository?.save?.(roomId, payload.state);
             this.emit('gameState', payload);
         });
+        const forwardRoundEnd = (payload) => {
+            this.emit('roundEnd', payload);
+        };
+        synchronizer.on('roundEnd', forwardRoundEnd);
+        room.once('gameDetached', () => {
+            synchronizer.off('roundEnd', forwardRoundEnd);
+        });
         this.emit('gameStarted', { roomId, state: gameInstance.getState() });
         return { room, gameInstance };
     }

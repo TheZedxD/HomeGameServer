@@ -49,8 +49,8 @@ test('PluginManager loads TicTacToe and Checkers plugins', async () => {
     const registry = new GameRegistry();
     const manager = new PluginManager({ registry, logger: createLogger() });
     await manager.loadFromDirectory(path.join(__dirname, '..', 'src', 'plugins'));
-    const game = registry.get('tictactoe');
-    assert.ok(game, 'tictactoe plugin should register');
+    const game = registry.get('tic-tac-toe');
+    assert.ok(game, 'tic-tac-toe plugin should register');
     assert.strictEqual(game.minPlayers, 2);
     const checkers = registry.get('checkers');
     assert.ok(checkers, 'checkers plugin should register');
@@ -78,7 +78,7 @@ test('GameRoomManager creates rooms and plays TicTacToe', async () => {
     const repository = new InMemoryGameRepository();
     const manager = new GameRoomManager({ gameFactory: factory, repository });
 
-    const room = manager.createRoom({ hostId: 'host', gameId: 'tictactoe', metadata: { mode: 'lan' } });
+    const room = manager.createRoom({ hostId: 'host', gameId: 'tic-tac-toe', metadata: { mode: 'lan' } });
     await manager.joinRoom(room.id, { id: 'host', displayName: 'Host', isReady: true });
     await manager.joinRoom(room.id, { id: 'guest', displayName: 'Guest', isReady: true });
     manager.startGame(room.id);
@@ -97,7 +97,7 @@ test('GameRoomManager undo restores previous state', async () => {
     const repository = new InMemoryGameRepository();
     const manager = new GameRoomManager({ gameFactory: factory, repository });
 
-    const room = manager.createRoom({ hostId: 'host', gameId: 'tictactoe', metadata: { mode: 'lan' } });
+    const room = manager.createRoom({ hostId: 'host', gameId: 'tic-tac-toe', metadata: { mode: 'lan' } });
     await manager.joinRoom(room.id, { id: 'host', displayName: 'Host', isReady: true });
     await manager.joinRoom(room.id, { id: 'guest', displayName: 'Guest', isReady: true });
     manager.startGame(room.id);
