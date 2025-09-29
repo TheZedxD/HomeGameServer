@@ -302,10 +302,11 @@ class ModularGameServer extends EventEmitter {
     _serializeRooms() {
         const summary = {};
         for (const room of this.roomManager.rooms.values()) {
-            if (room.metadata.mode === 'lan' && room.playerManager.players.size < room.playerManager.maxPlayers) {
+            if (room.playerManager.players.size < room.playerManager.maxPlayers) {
                 summary[room.id] = {
                     roomId: room.id,
                     gameType: room.gameId,
+                    mode: room.metadata.mode,
                     playerCount: room.playerManager.players.size,
                     maxPlayers: room.playerManager.maxPlayers,
                 };
