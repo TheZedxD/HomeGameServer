@@ -74,7 +74,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$port = if ($env:PORT) { $env:PORT } else { '8081' }; ^
    $npm = Start-Process npm -ArgumentList 'start' -NoNewWindow -PassThru; ^
    $ip = if ($env:SERVER_IP) { $env:SERVER_IP } else { '127.0.0.1' }; ^
-   Write-Host ('[*] Listening on http://{0}:{1} and http://localhost:{1}' -f $ip, $port); ^
+   Write-Host ('Server running at http://{0}:{1} and http://localhost:{1}' -f $ip, $port); ^
    Write-Host '[*] Press Ctrl+C to stop the server.'; ^
    $npm.WaitForExit(); ^
    exit $npm.ExitCode"

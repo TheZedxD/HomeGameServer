@@ -127,7 +127,7 @@ if [ "$has_start" = true ]; then
 
     trap 'kill "$server_pid" 2>/dev/null || true' INT TERM
 
-    log "[*] Listening on http://$server_ip:$port_value and http://localhost:$port_value"
+    log "Server running at http://$server_ip:$port_value and http://localhost:$port_value"
     log "[*] Press Ctrl+C to stop the server."
 
     wait "$server_pid"

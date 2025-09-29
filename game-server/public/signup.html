@@ -166,7 +166,12 @@
           maxlength="32"
           autocomplete="nickname"
           placeholder="Shown to other players"
+          aria-label="Display name"
+          aria-invalid="false"
+          aria-describedby="signup-displayName-error"
+          data-error-id="signup-displayName-error"
         />
+        <span id="signup-displayName-error" class="input-error" role="alert" hidden></span>
       </div>
       <div>
         <label for="signup-password">Password</label>
