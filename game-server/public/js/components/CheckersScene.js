@@ -145,7 +145,8 @@ export class CheckersScene {
       return;
     }
 
-    if (this.gameState.turn !== this.myColor) {
+    if (this.gameState.turnColor !== this.myColor) {
+      // It’s not your turn if the current turn colour doesn’t match your colour.
       return;
     }
 
