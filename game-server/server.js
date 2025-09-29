@@ -69,6 +69,17 @@ modularGameServer.resourceMonitor.on('metrics', (snapshot) => {
     });
 });
 
+modularGameServer.roomManager.on('roundEnd', ({ seriesWinnerId }) => {
+    if (!seriesWinnerId) {
+        return;
+    }
+    try {
+        recordSeriesWin(seriesWinnerId);
+    } catch (error) {
+        console.warn('Failed to record series win:', error);
+    }
+});
+
 const DATA_DIR = path.join(__dirname, 'data');
 const USER_DATA_FILE = path.join(DATA_DIR, 'users.json');
 const UPLOAD_DIR = path.join(__dirname, 'public/uploads/profiles');
@@ -1181,6 +1192,18 @@ function verifyAndUpdatePassword(store, usernameKey, password) {
     }
 
     return { valid: false, updated: false };
+}
+
+function recordSeriesWin(winnerSocketId) {
+    const participant = players[winnerSocketId];
+    if (!participant) {
+        return;
+    }
+    if (participant.account) {
+        incrementUserWins(participant.account);
+    } else if (participant.guestId) {
+        guestSessionManager.recordWin(participant.guestId);
+    }
 }
 
 function incrementUserWins(accountName) {

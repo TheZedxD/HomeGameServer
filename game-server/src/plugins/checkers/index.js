@@ -4,6 +4,7 @@ const { buildGameInstance } = require('../../core');
 
 const BOARD_SIZE = 8;
 const COLORS = ['red', 'black'];
+const SERIES_WINS_REQUIRED = 2;
 
 class MovePieceStrategy {
     execute({ state, playerManager, playerId, payload }) {
@@ -11,14 +12,17 @@ class MovePieceStrategy {
             return { error: 'Player not part of this game.' };
         }
         if (state.isComplete) {
-            return { error: 'Game already complete.' };
+            return { error: 'Series already complete.' };
+        }
+        if (state.isRoundComplete) {
+            return { error: 'Round already complete. Await reset.' };
         }
         const order = playerManager.list().map(p => p.id);
         if (!order.includes(playerId)) {
             return { error: 'Unknown player turn.' };
         }
-        const turn = state.turn || order[0];
-        if (playerId !== turn) {
+        const turnId = state.currentPlayerId || state.turn || state.playerOrder?.[0] || order[0];
+        if (playerId !== turnId) {
             return { error: 'Not your turn.' };
         }
 
@@ -126,19 +130,21 @@ class MovePieceStrategy {
         };
 
         const opponentId = order.find(id => id !== playerId) || null;
-        let nextTurn = opponentId;
+        let nextTurnId = opponentId;
         let nextMustContinue = null;
 
         if (capturedAny) {
             const canContinue = canPieceCapture(board, currentRow, currentCol, piece, color);
             if (canContinue) {
-                nextTurn = playerId;
+                nextTurnId = playerId;
                 nextMustContinue = { playerId, from: { row: currentRow, col: currentCol } };
             }
         }
 
         next.mustContinue = nextMustContinue;
-        next.turn = nextTurn;
+        next.currentPlayerId = nextTurnId;
+        next.turn = nextTurnId;
+        next.turnColor = nextTurnId ? next.players?.[nextTurnId]?.color || null : null;
 
         const opponentColor = getOppositeColor(color);
         const opponentPieces = countPieces(board, opponentColor);
@@ -147,15 +153,9 @@ class MovePieceStrategy {
         const playerHasMoves = playerPieces > 0 && hasAnyMoves(board, color);
 
         if (opponentPieces === 0 || !opponentHasMoves) {
-            next.isComplete = true;
-            next.winner = playerId;
-            next.turn = null;
-            next.mustContinue = null;
+            concludeRound(next, { winnerId: playerId, winnerColor: color });
         } else if (playerPieces === 0 || !playerHasMoves) {
-            next.isComplete = true;
-            next.winner = opponentId;
-            next.turn = null;
-            next.mustContinue = null;
+            concludeRound(next, { winnerId: opponentId, winnerColor: opponentColor });
         }
 
         return {
@@ -198,8 +198,129 @@ function cloneBoard(board = []) {
     return board.map(row => row.slice());
 }
 
+function normalizeScore(score = {}) {
+    const base = {};
+    for (const color of COLORS) {
+        const value = Number.isFinite(Number(score?.[color])) ? Number(score[color]) : 0;
+        base[color] = value;
+    }
+    return base;
+}
+
 function cloneState(state = {}) {
     return JSON.parse(JSON.stringify(state));
+}
+
+function concludeRound(state, { winnerId, winnerColor }) {
+    const score = normalizeScore(state.score);
+    if (winnerColor) {
+        score[winnerColor] = (score[winnerColor] || 0) + 1;
+    }
+    state.score = score;
+    state.isRoundComplete = true;
+    state.roundOutcome = {
+        result: 'win',
+        playerId: winnerId || null,
+        color: winnerColor || null,
+    };
+    state.winnerId = winnerId || null;
+    state.winnerColor = winnerColor || null;
+    state.currentPlayerId = null;
+    state.turn = null;
+    state.turnColor = null;
+    state.mustContinue = null;
+    state.awaitingReset = true;
+    state.roundCompletedAt = Date.now();
+
+    if (winnerId && winnerColor && score[winnerColor] >= SERIES_WINS_REQUIRED) {
+        state.seriesWinner = winnerId;
+        state.seriesWinnerColor = winnerColor;
+        state.seriesWinnerName = state.players?.[winnerId]?.displayName || null;
+        state.isComplete = true;
+        state.awaitingReset = false;
+        state.gameOver = true;
+        state.winner = winnerColor;
+        state.winnerName = state.players?.[winnerId]?.displayName || null;
+    } else {
+        state.seriesWinner = state.seriesWinner || null;
+        state.seriesWinnerColor = state.seriesWinnerColor || null;
+        state.seriesWinnerName = state.seriesWinner ? state.players?.[state.seriesWinner]?.displayName || null : null;
+    }
+}
+
+function getStartingPlayerId(order = [], roundNumber = 1) {
+    if (!Array.isArray(order) || order.length === 0) {
+        return null;
+    }
+    const index = (Math.max(1, roundNumber) - 1) % order.length;
+    return order[index];
+}
+
+function prepareNextRound(state) {
+    const next = cloneState(state);
+    const nextRound = (state.round || 1) + 1;
+    next.board = createInitialBoard();
+    next.mustContinue = null;
+    next.lastMove = null;
+    next.isRoundComplete = false;
+    next.awaitingReset = false;
+    next.roundOutcome = null;
+    next.winner = null;
+    next.winnerId = null;
+    next.winnerName = null;
+    next.winnerColor = null;
+    next.round = nextRound;
+    const startingPlayerId = getStartingPlayerId(next.playerOrder, nextRound);
+    next.currentPlayerId = startingPlayerId;
+    next.turn = startingPlayerId;
+    next.turnColor = startingPlayerId ? next.players?.[startingPlayerId]?.color || null : null;
+    return next;
+}
+
+function attachRoundEndEmitter(game) {
+    let lastEmittedRound = 0;
+    game.stateManager.on('stateChanged', ({ current }) => {
+        const { state } = current;
+        if (!state.isRoundComplete) {
+            return;
+        }
+        const roundNumber = state.round || 0;
+        if (roundNumber <= lastEmittedRound) {
+            return;
+        }
+        lastEmittedRound = roundNumber;
+        const winnerId = state.winnerId || state.seriesWinner || null;
+        const winnerColor = state.roundOutcome?.color || state.seriesWinnerColor || null;
+        const winnerName = state.seriesWinnerName || (winnerId ? state.players?.[winnerId]?.displayName || null : null);
+        const payload = {
+            round: roundNumber,
+            score: normalizeScore(state.score),
+            redScore: state.score?.red,
+            blackScore: state.score?.black,
+            winnerId,
+            winnerColor,
+            winnerName,
+            outcome: state.roundOutcome || null,
+            seriesWinnerId: state.seriesWinner || null,
+            seriesWinnerColor: state.seriesWinnerColor || null,
+            seriesWinnerName: state.seriesWinnerName || null,
+        };
+        game.stateManager.emit('roundEnd', payload);
+
+        if (!state.seriesWinner && state.awaitingReset) {
+            setTimeout(() => {
+                game.stateManager.update((currentState) => {
+                    if (!currentState.isRoundComplete || currentState.seriesWinner) {
+                        return currentState;
+                    }
+                    if ((currentState.round || 0) !== roundNumber) {
+                        return currentState;
+                    }
+                    return prepareNextRound(currentState);
+                }, { system: 'checkers:autoReset' });
+            }, 1500);
+        }
+    });
 }
 
 function getForwardDirection(color) {
@@ -346,9 +467,17 @@ function registerPlayers(game, players = []) {
             if (!next.playerOrder.includes(added.id)) {
                 next.playerOrder.push(added.id);
             }
-            if (!next.turn) {
-                next.turn = next.playerOrder[0];
+            if (!next.score) {
+                next.score = normalizeScore(next.score);
             }
+            if (!next.round) {
+                next.round = 1;
+            }
+            if (!next.currentPlayerId) {
+                next.currentPlayerId = next.playerOrder[0] || null;
+            }
+            next.turn = next.currentPlayerId || null;
+            next.turnColor = next.currentPlayerId ? next.players?.[next.currentPlayerId]?.color || null : null;
             return next;
         });
     });
@@ -369,24 +498,44 @@ module.exports = {
                     id: 'checkers',
                     minPlayers: 2,
                     maxPlayers: 2,
-                    initialState: {
-                        roomId,
-                        board: createInitialBoard(),
-                        turn: initialOrder[0] || null,
-                        isComplete: false,
-                        winner: null,
-                        mustContinue: null,
-                        players: initialPlayers.reduce((acc, player, index) => {
+                    initialState: (() => {
+                        const initialPlayersMap = initialPlayers.reduce((acc, player, index) => {
                             const color = COLORS[index % COLORS.length];
                             acc[player.id] = {
                                 color,
                                 displayName: player.displayName,
                             };
                             return acc;
-                        }, {}),
+                        }, {});
+                        const startingPlayerId = initialOrder[0] || null;
+                        const startingColor = startingPlayerId ? initialPlayersMap?.[startingPlayerId]?.color || null : null;
+                        return {
+                        roomId,
+                        board: createInitialBoard(),
+                        turn: startingPlayerId,
+                        turnColor: startingColor,
+                        currentPlayerId: startingPlayerId,
+                        isComplete: false,
+                        isRoundComplete: false,
+                        winner: null,
+                        winnerId: null,
+                        winnerName: null,
+                        winnerColor: null,
+                        mustContinue: null,
+                        players: initialPlayersMap,
                         playerOrder: initialOrder,
                         lastMove: null,
-                    },
+                        score: normalizeScore(),
+                        round: 1,
+                        awaitingReset: false,
+                        roundOutcome: null,
+                        seriesWinner: null,
+                        seriesWinnerColor: null,
+                        seriesWinnerName: null,
+                        roundCompletedAt: null,
+                        gameOver: false,
+                    };
+                    })(),
                     strategies: {
                         movePiece: new MovePieceStrategy(),
                     },
@@ -394,6 +543,7 @@ module.exports = {
                 if (initialPlayers.length) {
                     registerPlayers(game, initialPlayers);
                 }
+                attachRoundEndEmitter(game);
                 return game;
             },
         });

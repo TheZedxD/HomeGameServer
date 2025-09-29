@@ -32,6 +32,7 @@ export class GameManager {
     this.gameInstance = null;
     this.currentPlayers = null;
     this.myPlayerId = null;
+    this.activeGameId = null;
 
     this.availableGames = this.normalizeAvailableGames([
       DEFAULT_GAME_METADATA.checkers,
@@ -76,52 +77,75 @@ export class GameManager {
       this.uiManager.updateMatchLobby(room, this.myPlayerId);
       this.syncCurrentPlayersWithRoom(room);
     });
-    this.socket.on('gameStart', ({ gameState, players, mode }) => {
-      this.currentPlayers = players;
-      const myPlayer = players[this.myPlayerId];
+    this.socket.on('gameStart', ({ gameState, players, mode, gameId }) => {
+      const normalizedState = this.normalizeGameState(gameState);
+      this.activeGameId = gameId || normalizedState?.id || this.activeGameId || 'checkers';
+      this.currentPlayers = this.normalizePlayers(players);
+      const myPlayer = this.currentPlayers?.[this.myPlayerId] || {};
       this.uiManager.showView('gameUI');
       if (this.uiManager.elements.game.mode) {
         this.uiManager.elements.game.mode.textContent = mode === 'p2p' ? 'Online (P2P)' : 'LAN';
       }
-      if (this.uiManager.elements.game.color) {
-        this.uiManager.elements.game.color.textContent = myPlayer.color.toUpperCase();
-        const colorAccent = PLAYER_COLOR_SWATCHES[myPlayer.color] || '#f5f5dc';
-        this.uiManager.elements.game.color.style.color = colorAccent;
-        this.uiManager.elements.game.color.style.textShadow =
-          myPlayer.color === 'red'
-            ? '0 0 12px rgba(255, 99, 99, 0.85)'
-            : '0 0 12px rgba(255, 235, 180, 0.7)';
+      const playerColorLabel = this.uiManager.elements.game.color;
+      if (playerColorLabel) {
+        if (myPlayer.color) {
+          playerColorLabel.textContent = myPlayer.color.toUpperCase();
+          const colorAccent = PLAYER_COLOR_SWATCHES[myPlayer.color] || '#f5f5dc';
+          playerColorLabel.style.color = colorAccent;
+          playerColorLabel.style.textShadow =
+            myPlayer.color === 'red'
+              ? '0 0 12px rgba(255, 99, 99, 0.85)'
+              : '0 0 12px rgba(255, 235, 180, 0.7)';
+        } else if (myPlayer.marker) {
+          playerColorLabel.textContent = myPlayer.marker.toUpperCase();
+          playerColorLabel.style.color = '';
+          playerColorLabel.style.textShadow = '';
+        } else {
+          playerColorLabel.textContent = '';
+          playerColorLabel.style.color = '';
+          playerColorLabel.style.textShadow = '';
+        }
       }
 
-      this.uiManager.updateTurnIndicator(gameState);
-      this.uiManager.syncCurrentPlayers(players);
+      this.uiManager.setGameType(this.activeGameId);
+      this.uiManager.updateTurnIndicator(normalizedState, { players: this.currentPlayers, gameId: this.activeGameId });
+      this.uiManager.syncCurrentPlayers(this.currentPlayers);
       this.uiManager.setScoreboardVisibility(true);
-      this.uiManager.updateScoreboardDisplay(gameState.score || { red: 0, black: 0 });
+      this.uiManager.updateScoreboardDisplay(
+        normalizedState.score || {},
+        { players: this.currentPlayers, gameId: this.activeGameId }
+      );
       this.startGame({
         socket: this.socket,
         myColor: myPlayer.color,
-        gameState,
-        roundMessage: `Round ${gameState.round || 1}`
+        gameState: normalizedState,
+        roundMessage: `Round ${normalizedState.round || 1}`
       });
     });
-    this.socket.on('gameStateUpdate', (gameState) => {
+    this.socket.on('gameStateUpdate', (payload = {}) => {
+      const nextState = this.normalizeGameState(payload);
       if (this.gameInstance && typeof this.gameInstance.updateGameState === 'function') {
-        this.gameInstance.updateGameState(gameState);
+        this.gameInstance.updateGameState(nextState);
       }
-      if (gameState.score) {
-        this.uiManager.updateScoreboardDisplay(gameState.score);
+      if (nextState.score) {
+        this.uiManager.updateScoreboardDisplay(nextState.score, { players: this.currentPlayers, gameId: this.activeGameId });
       }
-      this.uiManager.updateTurnIndicator(gameState);
-      if (gameState.gameOver) {
-        const winnerLabel = gameState.winnerName || this.formatColorLabel(gameState.winner);
-        this.uiManager.showGameOver(`${winnerLabel} Wins!`);
-        this.profileManager.loadProfile();
+      this.uiManager.updateTurnIndicator(nextState, { players: this.currentPlayers, gameId: this.activeGameId });
+      if (nextState.gameOver || nextState.isComplete) {
+        const winnerLabel = this.getWinnerAnnouncement(nextState);
+        if (winnerLabel) {
+          this.uiManager.showGameOver(winnerLabel);
+        }
       }
     });
     this.socket.on('roundEnd', (event = {}) => {
-      const { winnerColor, winnerName, redScore, blackScore, winnerMarker, outcome } = event;
+      const { outcome, winnerColor, winnerMarker, winnerName, seriesWinnerName, seriesWinnerId, score, redScore, blackScore } = event;
       let announcement;
-      if (outcome?.result === 'draw') {
+      if (seriesWinnerName && outcome?.result !== 'draw') {
+        announcement = `${seriesWinnerName} wins the round and the series!`;
+      } else if (seriesWinnerName) {
+        announcement = `${seriesWinnerName} wins the series!`;
+      } else if (outcome?.result === 'draw') {
         announcement = 'Round ended in a draw!';
       } else if (winnerName) {
         announcement = `${winnerName} wins the round!`;
@@ -137,8 +161,16 @@ export class GameManager {
       } else {
         this.uiManager.showToast(announcement, 'info');
       }
-      if (typeof redScore !== 'undefined' || typeof blackScore !== 'undefined') {
-        this.uiManager.updateScoreboardDisplay({ red: redScore, black: blackScore });
+      if (score) {
+        this.uiManager.updateScoreboardDisplay(score, { players: this.currentPlayers, gameId: this.activeGameId });
+      } else if (typeof redScore !== 'undefined' || typeof blackScore !== 'undefined') {
+        this.uiManager.updateScoreboardDisplay(
+          { red: redScore, black: blackScore },
+          { players: this.currentPlayers, gameId: this.activeGameId }
+        );
+      }
+      if (seriesWinnerId && seriesWinnerId === this.myPlayerId) {
+        this.profileManager.loadProfile();
       }
     });
     this.socket.on('error', (message) => {
@@ -200,6 +232,7 @@ export class GameManager {
     }
     this.destroyGameInstance();
     this.currentPlayers = null;
+    this.activeGameId = null;
     this.uiManager.syncCurrentPlayers(null);
     this.uiManager.setScoreboardVisibility(false);
     this.uiManager.showView('mainLobby');
@@ -223,17 +256,87 @@ export class GameManager {
 
   syncCurrentPlayersWithRoom(room) {
     if (!room || !this.currentPlayers) return;
-    Object.entries(room.players).forEach(([id, player]) => {
-      if (this.currentPlayers[id]) {
-        this.currentPlayers[id].username = player.username;
-      }
-    });
+    const updates = this.normalizePlayers(room.players);
+    if (updates) {
+      Object.entries(updates).forEach(([id, player]) => {
+        if (this.currentPlayers[id]) {
+          this.currentPlayers[id] = { ...this.currentPlayers[id], ...player };
+        }
+      });
+    }
     this.uiManager.syncCurrentPlayers(this.currentPlayers);
   }
 
   formatColorLabel(color) {
     if (!color) return DEFAULT_GUEST_NAME;
-    return color.charAt(0).toUpperCase() + color.slice(1);
+    if (typeof color !== 'string') return DEFAULT_GUEST_NAME;
+    if (color === 'red' || color === 'black') {
+      return color.charAt(0).toUpperCase() + color.slice(1);
+    }
+    return color.toUpperCase();
+  }
+
+  normalizeGameState(payload) {
+    if (!payload) return {};
+    if (payload.state && typeof payload.state === 'object') {
+      return payload.state;
+    }
+    return payload;
+  }
+
+  normalizePlayers(players) {
+    if (!players) return null;
+    if (Array.isArray(players)) {
+      return players.reduce((acc, player) => {
+        if (player?.id) {
+          acc[player.id] = player;
+        }
+        return acc;
+      }, {});
+    }
+    if (typeof players === 'object') {
+      return { ...players };
+    }
+    return null;
+  }
+
+  getPlayerLabelById(playerId, fallback = DEFAULT_GUEST_NAME) {
+    if (!playerId) return fallback;
+    const player = this.currentPlayers?.[playerId];
+    if (!player) {
+      return fallback;
+    }
+    const rawLabel =
+      player.username || player.displayName || player.playerName || player.name || '';
+    const sanitized = this.profileManager?.sanitizeName(rawLabel || '').slice(0, 24) || '';
+    if (sanitized) {
+      return sanitized;
+    }
+    if (player.color) {
+      return this.formatColorLabel(player.color);
+    }
+    if (player.marker) {
+      return `${player.marker}`.toUpperCase();
+    }
+    return fallback;
+  }
+
+  getWinnerAnnouncement(state) {
+    if (!state) return null;
+    if (state.seriesWinner) {
+      const label = state.seriesWinnerName || this.getPlayerLabelById(state.seriesWinner);
+      return `${label} Wins the Series!`;
+    }
+    if (state.winnerName) {
+      return `${state.winnerName} Wins!`;
+    }
+    if (state.winnerColor) {
+      return `${this.formatColorLabel(state.winnerColor)} Wins!`;
+    }
+    if (state.winner) {
+      return `${this.getPlayerLabelById(state.winner)} Wins!`;
+    }
+    return null;
   }
 
   normalizeAvailableGames(games) {

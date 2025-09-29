@@ -185,9 +185,11 @@ class ProfileService {
             return;
         }
         store.users[key].wins = (store.users[key].wins || 0) + Number(amount || 0);
+        const totalWins = store.users[key].wins;
         this.writeStore(store);
         this.cache.set(key, store.users[key]).catch(() => {});
         this.analytics.record('win', { username: key });
+        return totalWins;
     }
 
     updateAvatar(username, avatarPath) {
