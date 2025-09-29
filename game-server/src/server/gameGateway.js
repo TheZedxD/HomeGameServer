@@ -83,6 +83,12 @@ class ModularGameServer extends EventEmitter {
                 context,
             });
         });
+        this.roomManager.on('roundEnd', ({ roomId, ...event }) => {
+            if (!roomId) {
+                return;
+            }
+            this.io.to(roomId).emit('roundEnd', event);
+        });
     }
 
     attachSocket(socket, { getPlayer, setPlayerRoom, clearPlayerRoom }) {

@@ -3,6 +3,8 @@ import { validateRoomCode } from '../utils/validation.js';
 export function createLobbyUI(elements, toast, modalManager) {
   const { lobby, matchLobby, modals } = elements;
   let joinHandler = null;
+  let createGameHandler = null;
+  let cachedAvailableGames = [];
 
   function setRoomJoinHandler(handler) {
     joinHandler = handler;
@@ -98,7 +100,14 @@ export function createLobbyUI(elements, toast, modalManager) {
       onJoinGame?.(validation.value);
     });
 
-    populateGameSelection(availableGames, onCreateGame);
+    createGameHandler = onCreateGame;
+    cachedAvailableGames = Array.isArray(availableGames) ? availableGames : [];
+    populateGameSelection(cachedAvailableGames, createGameHandler);
+  }
+
+  function updateAvailableGames(availableGames = []) {
+    cachedAvailableGames = Array.isArray(availableGames) ? availableGames : [];
+    populateGameSelection(cachedAvailableGames, createGameHandler);
   }
 
   function updateMatchLobby(room, myPlayerId, derivePlayerLabel) {
@@ -158,6 +167,7 @@ export function createLobbyUI(elements, toast, modalManager) {
     setRoomJoinHandler,
     renderRoomList,
     bindLobbyControls,
+    updateAvailableGames,
     updateMatchLobby
   };
 }

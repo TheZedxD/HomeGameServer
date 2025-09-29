@@ -104,6 +104,12 @@ export class UIManager {
     this.lobbyUI.bindLobbyControls(options);
   }
 
+  updateAvailableGames(availableGames) {
+    if (typeof this.lobbyUI.updateAvailableGames === 'function') {
+      this.lobbyUI.updateAvailableGames(availableGames);
+    }
+  }
+
   updateMatchLobby(room, myPlayerId) {
     this.lobbyUI.updateMatchLobby(room, myPlayerId, (player, fallback) =>
       this.derivePlayerLabel(player, fallback)

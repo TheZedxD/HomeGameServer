@@ -7,6 +7,23 @@ const PLAYER_COLOR_SWATCHES = {
   black: '#f5f5dc'
 };
 
+const DEFAULT_GAME_METADATA = {
+  checkers: {
+    id: 'checkers',
+    name: 'Checkers',
+    description: 'Classic 2-player strategy game.',
+    minPlayers: 2,
+    maxPlayers: 2
+  },
+  'tic-tac-toe': {
+    id: 'tic-tac-toe',
+    name: 'Tic-Tac-Toe',
+    description: 'Classic 3×3 strategy game.',
+    minPlayers: 2,
+    maxPlayers: 2
+  }
+};
+
 export class GameManager {
   constructor(socket, uiManager, profileManager) {
     this.socket = socket;
@@ -16,9 +33,10 @@ export class GameManager {
     this.currentPlayers = null;
     this.myPlayerId = null;
 
-    this.availableGames = [
-      { id: 'checkers', name: 'Checkers', description: 'Classic 2-player strategy game.' }
-    ];
+    this.availableGames = this.normalizeAvailableGames([
+      DEFAULT_GAME_METADATA.checkers,
+      DEFAULT_GAME_METADATA['tic-tac-toe']
+    ]);
 
     this.uiManager.setRoomJoinHandler((roomId) => this.joinGame(roomId));
     this.uiManager.bindLobbyControls({
@@ -33,6 +51,10 @@ export class GameManager {
   }
 
   setupSocketListeners() {
+    this.socket.on('availableGames', (games) => {
+      this.availableGames = this.normalizeAvailableGames(games);
+      this.uiManager.updateAvailableGames(this.availableGames);
+    });
     this.socket.on('connect', () => {
       console.log('Successfully connected to the game server with ID:', this.socket.id);
       this.syncProfileWithSocket(this.profileManager.profile);
@@ -96,14 +118,28 @@ export class GameManager {
         this.profileManager.loadProfile();
       }
     });
-    this.socket.on('roundEnd', ({ winnerColor, winnerName, redScore, blackScore }) => {
-      const announcement = `${winnerName || this.formatColorLabel(winnerColor)} wins the round!`;
+    this.socket.on('roundEnd', (event = {}) => {
+      const { winnerColor, winnerName, redScore, blackScore, winnerMarker, outcome } = event;
+      let announcement;
+      if (outcome?.result === 'draw') {
+        announcement = 'Round ended in a draw!';
+      } else if (winnerName) {
+        announcement = `${winnerName} wins the round!`;
+      } else if (winnerColor) {
+        announcement = `${this.formatColorLabel(winnerColor)} wins the round!`;
+      } else if (winnerMarker) {
+        announcement = `${winnerMarker} wins the round!`;
+      } else {
+        announcement = 'Round complete!';
+      }
       if (this.gameInstance && typeof this.gameInstance.showAnnouncement === 'function') {
         this.gameInstance.showAnnouncement(announcement);
       } else {
         this.uiManager.showToast(announcement, 'info');
       }
-      this.uiManager.updateScoreboardDisplay({ red: redScore, black: blackScore });
+      if (typeof redScore !== 'undefined' || typeof blackScore !== 'undefined') {
+        this.uiManager.updateScoreboardDisplay({ red: redScore, black: blackScore });
+      }
     });
     this.socket.on('error', (message) => {
       if (typeof message === 'string' && message.includes('does not exist')) {
@@ -140,7 +176,8 @@ export class GameManager {
 
   createGame(game, roomCode, mode = 'lan') {
     if (!game) return;
-    const payload = { gameType: game.name, mode };
+    const selectedGame = game.id ? game : DEFAULT_GAME_METADATA.checkers;
+    const payload = { gameType: selectedGame.id, mode };
     if (roomCode) {
       payload.roomCode = roomCode;
     }
@@ -197,6 +234,23 @@ export class GameManager {
   formatColorLabel(color) {
     if (!color) return DEFAULT_GUEST_NAME;
     return color.charAt(0).toUpperCase() + color.slice(1);
+  }
+
+  normalizeAvailableGames(games) {
+    const collection = Array.isArray(games)
+      ? games
+      : (games && typeof games === 'object' ? Object.values(games) : []);
+    const source = collection.length ? collection : Object.values(DEFAULT_GAME_METADATA);
+    return source.map((game) => {
+      const defaults = DEFAULT_GAME_METADATA[game.id] || {};
+      return {
+        id: game.id || defaults.id || game.name,
+        name: game.name || defaults.name || game.id || 'Unknown Game',
+        description: game.description || defaults.description || '',
+        minPlayers: game.minPlayers || defaults.minPlayers,
+        maxPlayers: game.maxPlayers || defaults.maxPlayers
+      };
+    });
   }
 
   syncProfileWithSocket(profile) {
