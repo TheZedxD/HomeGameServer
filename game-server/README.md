@@ -11,19 +11,11 @@ This project is a lightweight, self-hosted web server for playing classic multip
 
 ## Setup
 
-### Node.js requirements
+### Platform prerequisites
 
-This project targets modern Long-Term Support releases of Node.js. The `package.json` explicitly requires Node 18 or newer:
+This project targets modern Long-Term Support releases of Node.js (18 or newer) and uses the Sharp image library, which requires native build tooling. Prepare your environment before installing dependencies:
 
-```json
-{
-  "engines": {
-    "node": ">=18"
-  }
-}
-```
-
-- **Linux (recommended via NVM):**
+- **Linux (Debian/Ubuntu):**
   1. Install [NVM](https://github.com/nvm-sh/nvm) and load it into your shell:
      ```bash
      curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
@@ -35,37 +27,42 @@ This project targets modern Long-Term Support releases of Node.js. The `package.
      nvm install 18
      nvm use 18
      ```
+  3. Install Sharp prerequisites before running `npm ci`:
+     ```bash
+     sudo apt-get update
+     sudo apt-get install -y build-essential libvips
+     ```
+- **Arch/CachyOS:**
+  - Ensure base tooling and Sharp dependencies are installed:
+    ```bash
+    sudo pacman -S --needed base-devel libvips
+    ```
+  - Install Node.js 18+ with pacman or run `./install_cachyos.sh` / `./setup_cachyos.sh` for an automated setup.
 - **Windows:**
-  - Use [nvm-windows](https://github.com/coreybutler/nvm-windows) to install Node 18+ and switch between versions easily.
-  - Alternatively, install the latest LTS release with Chocolatey:
+  - Install Node 18+ using [nvm-windows](https://github.com/coreybutler/nvm-windows) or via Chocolatey:
     ```powershell
     choco install nodejs-lts
     ```
+  - Install native build tools required by Sharp:
+    - Use the [Windows Build Tools](https://github.com/felixrieseberg/windows-build-tools), or
+    - Install the "Desktop development with C++" workload from the Visual Studio Build Tools installer.
 
-### Required build tools
+### Environment configuration
 
-Sharp (used for image processing) depends on native libraries. Install build tooling before running `npm ci`:
-
-- **Debian/Ubuntu:** `sudo apt-get install build-essential libvips`
-- **Arch/CachyOS:** Use the provided `setup_cachyos.sh` or ensure `base-devel` and `libvips` are available.
-- **Windows:** Install the [Windows Build Tools](https://github.com/felixrieseberg/windows-build-tools) or the "Desktop development with C++" workload from the Visual Studio Build Tools installer.
-
-### Clone the repository
-
-1.  **Clone Repository:** Download or clone this repository to your machine.
-
-## Configuration
-
-1. Copy the example environment file and update the secrets before running the server:
+1. Copy the example environment file before starting the server:
     ```bash
     cp .env.example .env
     ```
-2. Edit `.env` to provide strong, unique values for:
+2. Open `.env` and replace every placeholder with strong, unique secrets for:
     - `SESSION_SECRET`
     - `JWT_SECRET`
     - `GUEST_SESSION_SECRET`
     - `ALLOWED_ORIGINS` (comma-separated list of allowed browser origins)
-3. In production deployments behind HTTPS, set `NODE_ENV=production` so secure cookies are enforced.
+3. For production deployments behind HTTPS, set `NODE_ENV=production` to ensure secure cookies are enforced.
+
+### Clone the repository
+
+1.  **Clone Repository:** Download or clone this repository to your machine.
 
 ## Installation
 
@@ -78,7 +75,7 @@ Sharp (used for image processing) depends on native libraries. Install build too
      ```bash
      npm install
      ```
-3. Create or update the `.env` file as described in the [Configuration](#configuration) section before starting the server.
+3. Create or update the `.env` file as described in the [Environment configuration](#environment-configuration) section before starting the server.
 
 - Debian/Ubuntu users can run `./run_ubuntu.sh` to install Node.js 18.x, the Sharp build dependencies, project packages, and then start the server automatically.
 - CachyOS users can run `./install_cachyos.sh` to automatically install Node.js (if needed) and install project dependencies. The script falls back to `npm install` if `npm ci` detects an out-of-date lock file so installation succeeds on fresh systems.

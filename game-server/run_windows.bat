@@ -20,28 +20,37 @@ if errorlevel 1 (
   exit /b 1
 )
 
-set "TEST_SCRIPT="
-for /f "usebackq tokens=* delims=" %%I in (`npm pkg get scripts.test 2^>nul`) do set "TEST_SCRIPT=%%~I"
+set "RUN_TESTS_VALUE=%RUN_TESTS%"
+if /I "!RUN_TESTS_VALUE!"=="true" (
+  set "TEST_SCRIPT="
+  for /f "usebackq tokens=* delims=" %%I in (`npm pkg get scripts.test 2^>nul`) do set "TEST_SCRIPT=%%~I"
 
-if defined TEST_SCRIPT (
-  set "TEST_SCRIPT=!TEST_SCRIPT:"=!"
-  if /I "!TEST_SCRIPT!"=="undefined" (
-    echo [*] No npm test script found; skipping tests.
-  ) else (
-    if "!TEST_SCRIPT!"=="" (
+  if defined TEST_SCRIPT (
+    set "TEST_SCRIPT=!TEST_SCRIPT:"=!"
+    if /I "!TEST_SCRIPT!"=="undefined" (
       echo [*] No npm test script found; skipping tests.
     ) else (
-      echo [*] Running npm test...
-      call npm test
-      if errorlevel 1 (
-        echo [!] Tests failed.
-        pause
-        exit /b 1
+      if "!TEST_SCRIPT!"=="" (
+        echo [*] No npm test script found; skipping tests.
+      ) else (
+        echo [*] Running npm test...
+        call npm test
+        if errorlevel 1 (
+          echo [!] Tests failed.
+          pause
+          exit /b 1
+        )
       )
     )
+  ) else (
+    echo [*] No npm test script found; skipping tests.
   )
 ) else (
-  echo [*] No npm test script found; skipping tests.
+  if defined RUN_TESTS (
+    echo [*] RUN_TESTS is set to "!RUN_TESTS_VALUE!"; skipping tests.
+  ) else (
+    echo [*] RUN_TESTS not set; skipping tests.
+  )
 )
 
 if not defined PORT set "PORT=8081"
