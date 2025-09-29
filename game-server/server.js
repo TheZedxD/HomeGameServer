@@ -49,6 +49,134 @@ const modularGameServer = createModularGameServer({
     pluginDirectory: path.join(__dirname, 'src/plugins'),
 });
 
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const IS_PRODUCTION = NODE_ENV === 'production';
+
+const DEFAULT_SECRET_PLACEHOLDERS = new Set(
+    [
+        'change_me',
+        'changeme',
+        'default',
+        'default_secret',
+        'secret',
+        'password',
+        'session_secret',
+        'jwt_secret',
+        'guest_session_secret',
+        'homegame_session_secret',
+        'homegame_jwt_secret',
+        'homegame_session_secret-guest',
+        'guestsecret',
+        'guest_secret',
+    ].map((value) => value.toLowerCase()),
+);
+
+function generateSecureSecret(byteLength = 48) {
+    return crypto.randomBytes(byteLength).toString('base64');
+}
+
+function isPlaceholderSecret(secret) {
+    if (typeof secret !== 'string') {
+        return true;
+    }
+    return DEFAULT_SECRET_PLACEHOLDERS.has(secret.trim().toLowerCase());
+}
+
+function hasStrongEntropy(secret) {
+    if (typeof secret !== 'string') {
+        return false;
+    }
+
+    if (secret.length < 32) {
+        return false;
+    }
+
+    const uniqueChars = new Set(secret).size;
+    const uniqueRatio = uniqueChars / secret.length;
+    if (uniqueRatio < 0.25) {
+        return false;
+    }
+
+    const characterClasses = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/];
+    const classesMatched = characterClasses.reduce(
+        (count, regex) => (regex.test(secret) ? count + 1 : count),
+        0,
+    );
+
+    return classesMatched >= 2;
+}
+
+function resolveSecret(secretName) {
+    const envValue = process.env[secretName];
+
+    if (envValue && !isPlaceholderSecret(envValue)) {
+        if (IS_PRODUCTION && !hasStrongEntropy(envValue)) {
+            console.error(
+                `[Security] ${secretName} does not meet strength requirements. ` +
+                    'Provide a secret with at least 32 characters and mixed character types.',
+            );
+            return { ok: false };
+        }
+
+        if (!IS_PRODUCTION && !hasStrongEntropy(envValue)) {
+            console.warn(
+                `[Security] ${secretName} appears to be weak. ` +
+                    'Consider using at least 32 characters with mixed character types.',
+            );
+        }
+
+        return { ok: true, value: envValue };
+    }
+
+    if (IS_PRODUCTION) {
+        const reason = envValue
+            ? 'uses an insecure default value'
+            : 'is not set';
+        console.error(
+            `[Security] ${secretName} ${reason}. The server cannot start without a strong secret.`,
+        );
+        return { ok: false };
+    }
+
+    const generated = generateSecureSecret();
+    console.warn(
+        `[Security] Generated a secure random value for ${secretName} in development. ` +
+            'Add this secret to your .env file to persist sessions across restarts.',
+    );
+    return { ok: true, value: generated };
+}
+
+function loadSecrets() {
+    const secrets = {};
+    const failures = [];
+
+    ['SESSION_SECRET', 'JWT_SECRET', 'GUEST_SESSION_SECRET'].forEach((secretName) => {
+        const result = resolveSecret(secretName);
+        if (!result.ok) {
+            failures.push(secretName);
+            return;
+        }
+
+        secrets[secretName] = result.value;
+        process.env[secretName] = result.value;
+    });
+
+    if (failures.length > 0) {
+        console.error(
+            `[Security] Startup aborted. Update the following secrets: ${failures.join(', ')}.`,
+        );
+        process.exit(1);
+    }
+
+    return secrets;
+}
+
+const {
+    SESSION_SECRET,
+    JWT_SECRET,
+    GUEST_SESSION_SECRET,
+} = loadSecrets();
+
 modularGameServer.resourceMonitor.on('metrics', (snapshot) => {
     metricsCollector.updateGameMetrics({
         rooms: snapshot.rooms,
@@ -87,15 +215,12 @@ const SESSION_COOKIE_NAME = 'homegame.sid';
 const SESSION_TTL_SECONDS = 60 * 60 * 24; // 1 day
 const SESSION_TTL_MS = SESSION_TTL_SECONDS * 1000;
 const SESSION_STORE_DIR = path.join(__dirname, '.sessions');
-const SESSION_SECRET = process.env.SESSION_SECRET || 'homegame_session_secret';
-const JWT_SECRET = process.env.JWT_SECRET || 'homegame_jwt_secret';
-const GUEST_SESSION_SECRET = process.env.GUEST_SESSION_SECRET || `${SESSION_SECRET}-guest`;
 const GUEST_COOKIE_NAME = 'homegame.guest';
 const GUEST_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 2; // 2 days
 const CSRF_HEADER_NAME = 'x-csrf-token';
 const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
 const SCRYPT_KEY_LENGTH = 64;
-const COOKIE_SECURE = process.env.NODE_ENV === 'production';
+const COOKIE_SECURE = IS_PRODUCTION;
 const MAX_UPLOAD_SIZE = 2 * 1024 * 1024; // 2 MB
 const REDIS_URL = process.env.REDIS_URL || null;
 const PROFILE_CACHE_TTL_MS = Number.parseInt(process.env.PROFILE_CACHE_TTL_MS || '15000', 10);
