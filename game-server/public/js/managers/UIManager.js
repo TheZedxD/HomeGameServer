@@ -7,6 +7,7 @@ import { createToastManager } from '../ui/toast.js';
 import { createProfileUI } from '../ui/profile.js';
 import { createLobbyUI } from '../ui/lobby.js';
 import { createGameUI } from '../ui/game.js';
+import { createModalManager } from '../ui/modalManager.js';
 
 function getLocalStorageItem(key) {
   try {
@@ -28,10 +29,11 @@ export class UIManager {
   constructor() {
     this.currentView = null;
     this.elements = cacheElements();
+    this.modalManager = createModalManager(this.elements);
     this.toast = createToastManager(this.elements.general.toastContainer);
-    this.profileUI = createProfileUI(this.elements, this.toast);
-    this.lobbyUI = createLobbyUI(this.elements, this.toast);
-    this.gameUI = createGameUI(this.elements);
+    this.profileUI = createProfileUI(this.elements, this.toast, this.modalManager);
+    this.lobbyUI = createLobbyUI(this.elements, this.toast, this.modalManager);
+    this.gameUI = createGameUI(this.elements, this.modalManager);
     this.profileManager = null;
   }
 
@@ -40,16 +42,24 @@ export class UIManager {
   }
 
   showView(viewName) {
-    const { views, modals, lobby } = this.elements;
-    Object.values(views).forEach((view) => view?.classList.add('hidden'));
-    const activeView = views[viewName];
+    const { views = {}, modals = {}, lobby = {} } = this.elements || {};
+    Object.values(views || {}).forEach((view) => {
+      if (view) view.classList.add('hidden');
+    });
+    const activeView = views?.[viewName];
     if (activeView) {
       activeView.classList.remove('hidden');
       this.currentView = viewName;
+    } else if (viewName) {
+      console.warn(`Requested view "${viewName}" does not exist in the cached elements.`);
     }
-    lobby.lobbyListContainer?.classList.toggle('hidden', viewName !== 'mainLobby');
-    if (viewName !== 'gameUI') {
-      modals.gameOver?.classList.add('hidden');
+    lobby?.lobbyListContainer?.classList.toggle('hidden', viewName !== 'mainLobby');
+    if (viewName !== 'gameUI' && modals?.gameOver) {
+      if (this.modalManager) {
+        this.modalManager.closeModal(modals.gameOver, { returnFocus: false });
+      } else {
+        modals.gameOver.classList.add('hidden');
+      }
     }
   }
 

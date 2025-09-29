@@ -1,6 +1,6 @@
 import { validateRoomCode } from '../utils/validation.js';
 
-export function createLobbyUI(elements, toast) {
+export function createLobbyUI(elements, toast, modalManager) {
   const { lobby, matchLobby, modals } = elements;
   let joinHandler = null;
 
@@ -58,31 +58,31 @@ export function createLobbyUI(elements, toast) {
       button.textContent = game.name;
       button.addEventListener('click', () => {
         onSelect?.(game);
-        modals.createGame?.classList.add('hidden');
+        if (modalManager && modals.createGame) {
+          modalManager.closeModal(modals.createGame);
+        } else {
+          modals.createGame?.classList.add('hidden');
+        }
       });
       list.appendChild(button);
     });
   }
 
-  function initializeModalDismissal() {
-    const overlays = Array.from(document.querySelectorAll('.modal-overlay'));
-    overlays.forEach((overlay) => {
-      const modalContent = overlay.querySelector('.modal-content');
-      modalContent?.addEventListener('click', (event) => event.stopPropagation());
-      overlay.addEventListener('click', (event) => {
-        if (event.target !== overlay) return;
-        overlay.classList.add('hidden');
-      });
-    });
-  }
-
   function bindLobbyControls({ availableGames = [], onReady, onStartGame, onCreateGame, onJoinGame }) {
     lobby.createGameButton?.addEventListener('click', () => {
-      modals.createGame?.classList.remove('hidden');
+      if (modalManager && modals.createGame) {
+        modalManager.openModal(modals.createGame, lobby.createGameButton);
+      } else {
+        modals.createGame?.classList.remove('hidden');
+      }
     });
 
     lobby.closeModalButton?.addEventListener('click', () => {
-      modals.createGame?.classList.add('hidden');
+      if (modalManager && modals.createGame) {
+        modalManager.closeModal(modals.createGame);
+      } else {
+        modals.createGame?.classList.add('hidden');
+      }
     });
 
     matchLobby.readyButton?.addEventListener('click', () => onReady?.());
@@ -98,7 +98,6 @@ export function createLobbyUI(elements, toast) {
       onJoinGame?.(validation.value);
     });
 
-    initializeModalDismissal();
     populateGameSelection(availableGames, onCreateGame);
   }
 

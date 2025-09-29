@@ -145,7 +145,12 @@ export class GameManager {
       payload.roomCode = roomCode;
     }
     this.socket.emit('createGame', payload);
-    this.uiManager.elements.modals.createGame?.classList.add('hidden');
+    const modal = this.uiManager.elements.modals.createGame;
+    if (this.uiManager.modalManager && modal) {
+      this.uiManager.modalManager.closeModal(modal);
+    } else {
+      modal?.classList.add('hidden');
+    }
   }
 
   joinGame(roomId) {

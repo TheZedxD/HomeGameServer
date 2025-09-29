@@ -129,7 +129,7 @@
                             <p>Mode: <b id="game-mode"></b></p>
                             <p>Your Color: <b id="player-color"></b></p>
                         </div>
-                        <h2 id="turn-indicator"></h2>
+                        <h2 id="turn-indicator" aria-live="polite"></h2>
                     </div>
                     <div id="scoreboard" class="scoreboard classic-raised hidden" aria-live="polite">
                         <p id="score-text">Red: 0 – Black: 0</p>
@@ -141,7 +141,7 @@
                     <div class="match-controls" aria-label="Game actions">
                         <button id="exit-to-menu-btn" class="btn" type="button">Exit to Menu</button>
                     </div>
-                    <div id="game-over-message" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="winner-text">
+                    <div id="game-over-message" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="winner-text" tabindex="-1">
                         <div class="modal-content classic-raised">
                             <h1 id="winner-text"></h1>
                             <button id="game-over-exit-btn" class="btn btn-primary" type="button">Back to Lobby</button>
@@ -173,7 +173,7 @@
                 </div>
                 <div class="window-body status-body">
                     <div class="status-indicator online" role="status">Online</div>
-                    <div class="status-message">Local multiplayer services are running.</div>
+                    <div class="status-message" aria-live="polite" role="status">Local multiplayer services are running.</div>
                     <div class="network-info" aria-live="polite">
                         <div>IP: <span id="server-ip">Loading…</span></div>
                         <div>URL: <span id="server-url">Loading…</span></div>
@@ -184,7 +184,7 @@
         </footer>
     </div>
 
-    <div id="create-game-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="create-game-title">
+    <div id="create-game-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="create-game-title" tabindex="-1">
         <div class="modal-content classic-raised">
             <div class="title-bar">
                 <span class="title-bar-text" id="create-game-title">Create a New Game</span>
@@ -199,7 +199,7 @@
         </div>
     </div>
 
-    <div id="profile-prompt-modal" class="modal-overlay hidden prompt-modal" role="dialog" aria-modal="true" aria-labelledby="profile-prompt-title">
+    <div id="profile-prompt-modal" class="modal-overlay hidden prompt-modal" role="dialog" aria-modal="true" aria-labelledby="profile-prompt-title" tabindex="-1">
         <div class="modal-content classic-raised">
             <div class="title-bar">
                 <span class="title-bar-text" id="profile-prompt-title">Complete Your Profile</span>

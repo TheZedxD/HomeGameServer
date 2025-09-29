@@ -1,4 +1,4 @@
-export function createGameUI(elements) {
+export function createGameUI(elements, modalManager) {
   const { game, scoreboard, modals } = elements;
   let currentPlayers = null;
   let playerLabels = { red: 'Red', black: 'Black' };
@@ -59,7 +59,11 @@ export function createGameUI(elements) {
   function showGameOver(message) {
     if (!modals.gameOver || !game.winnerText) return;
     game.winnerText.textContent = message;
-    modals.gameOver.classList.remove('hidden');
+    if (modalManager) {
+      modalManager.openModal(modals.gameOver);
+    } else {
+      modals.gameOver.classList.remove('hidden');
+    }
   }
 
   return {
