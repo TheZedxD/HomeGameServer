@@ -95,7 +95,8 @@ if [ -f package-lock.json ]; then
   echo "[*] Installing Node.js dependencies with npm ci..."
   if ! run_as_invoking_user npm ci; then
     status=$?
-    echo "[!] npm ci failed (exit code $status). Retrying with npm install..." >&2
+    echo "[!] npm ci failed with exit code $status. The lockfile may be out of sync." >&2
+    echo "[*] Falling back to npm install to regenerate dependencies and the lockfile..."
     run_as_invoking_user npm install
   fi
 else
