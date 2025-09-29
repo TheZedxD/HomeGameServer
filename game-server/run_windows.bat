@@ -24,20 +24,27 @@ set "TEST_SCRIPT="
 for /f "usebackq tokens=* delims=" %%I in (`npm pkg get scripts.test 2^>nul`) do set "TEST_SCRIPT=%%~I"
 
 if defined TEST_SCRIPT (
-  if /I not "!TEST_SCRIPT!"=="undefined" (
-    echo [*] Running npm test...
-    call npm test
-    if errorlevel 1 (
-      echo [!] Tests failed.
-      pause
-      exit /b 1
-    )
-  ) else (
+  set "TEST_SCRIPT=!TEST_SCRIPT:"=!"
+  if /I "!TEST_SCRIPT!"=="undefined" (
     echo [*] No npm test script found; skipping tests.
+  ) else (
+    if "!TEST_SCRIPT!"=="" (
+      echo [*] No npm test script found; skipping tests.
+    ) else (
+      echo [*] Running npm test...
+      call npm test
+      if errorlevel 1 (
+        echo [!] Tests failed.
+        pause
+        exit /b 1
+      )
+    )
   )
 ) else (
   echo [*] No npm test script found; skipping tests.
 )
+
+if not defined PORT set "PORT=8081"
 
 echo [*] Starting server on :%PORT%
 call npm start

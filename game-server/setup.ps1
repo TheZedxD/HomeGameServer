@@ -20,10 +20,15 @@ Assert-Command 'node' 'Node.js is required but was not found in PATH.'
 Assert-Command 'npm' 'npm is required but was not found in PATH.'
 
 Write-Host '[*] Installing dependencies with npm ci...'
-npm ci
-if ($LASTEXITCODE -ne 0) {
-    Write-Host '[!] npm ci failed.'
-    exit $LASTEXITCODE
+& npm ci
+$ciExitCode = $LASTEXITCODE
+if ($ciExitCode -ne 0) {
+    Write-Host "[!] npm ci failed (exit code $ciExitCode). Retrying with npm install to refresh lockfile..."
+    & npm install
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host '[!] npm install failed.'
+        exit $LASTEXITCODE
+    }
 }
 
 if (-not (Test-Path '.env')) {
@@ -40,5 +45,5 @@ else {
 }
 
 Write-Host '[*] Starting server with npm start...'
-npm start
+& npm start
 exit $LASTEXITCODE

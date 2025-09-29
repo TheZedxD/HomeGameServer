@@ -9,18 +9,8 @@ if ! command -v pacman >/dev/null 2>&1; then
   echo "pacman not found (Arch/CachyOS expected)"; exit 1
 fi
 
-echo "[*] Refreshing package databases..."
-sudo pacman -Syu --noconfirm --needed
-
-need_pkg() {
-  local pkg="$1"
-  if ! pacman -Qi "$pkg" >/dev/null 2>&1; then
-    sudo pacman -S --noconfirm --needed "$pkg"
-  fi
-}
-
-need_pkg nodejs
-need_pkg npm
+echo "[*] Installing Node.js and npm dependencies via pacman..."
+sudo pacman -S --noconfirm --needed nodejs npm
 
 echo "[*] Installing Node deps via npm ci..."
 if [ ! -d node_modules ]; then
