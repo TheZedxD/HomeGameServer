@@ -2,6 +2,23 @@
 
 const { containsProfanity } = require('./profanityFilter');
 
+const COMMON_PASSWORDS = new Set([
+    '123456',
+    'password',
+    '12345678',
+    'qwerty',
+    'abc123',
+    'password1',
+    '111111',
+    '1234567890',
+    'letmein',
+    'welcome',
+]);
+
+const PASSWORD_RATE_LIMIT_MAX_ATTEMPTS = 5;
+const PASSWORD_RATE_LIMIT_WINDOW_MS = 60_000;
+const passwordValidationAttempts = new Map();
+
 const ACCOUNT_NAME_REGEX = /^[a-zA-Z0-9_-]{3,24}$/;
 const DISPLAY_NAME_REGEX = /^[\p{L}\p{N} _'’.-]{1,24}$/u;
 const ROOM_CODE_REGEX = /^[A-Z0-9]{3,10}$/;
@@ -66,25 +83,99 @@ function sanitizeAccountName(name) {
     return trimmed;
 }
 
-function validatePasswordInput(password) {
+function getPasswordRateLimitBucket(key) {
+    const now = Date.now();
+    const bucket = passwordValidationAttempts.get(key);
+
+    if (!bucket || now - bucket.windowStart > PASSWORD_RATE_LIMIT_WINDOW_MS) {
+        const freshBucket = { windowStart: now, attempts: 0 };
+        passwordValidationAttempts.set(key, freshBucket);
+        return freshBucket;
+    }
+
+    return bucket;
+}
+
+function isRateLimitedForPassword(key) {
+    const bucket = getPasswordRateLimitBucket(key);
+    if (bucket.attempts >= PASSWORD_RATE_LIMIT_MAX_ATTEMPTS) {
+        return true;
+    }
+    bucket.attempts += 1;
+    return false;
+}
+
+function calculateShannonEntropy(value) {
+    if (!value) {
+        return 0;
+    }
+
+    const length = value.length;
+    const counts = new Map();
+
+    for (const char of value) {
+        counts.set(char, (counts.get(char) || 0) + 1);
+    }
+
+    let entropy = 0;
+    for (const count of counts.values()) {
+        const probability = count / length;
+        entropy -= probability * Math.log2(probability);
+    }
+
+    return entropy;
+}
+
+function validatePasswordInput(password, options = {}) {
+    const { username = '', identifier } = options;
+    const rateLimitKey = String(identifier || username || 'global').toLowerCase();
+
+    if (isRateLimitedForPassword(rateLimitKey)) {
+        return {
+            valid: false,
+            message: 'Too many password validation attempts. Please wait before trying again.'
+        };
+    }
+
     if (typeof password !== 'string') {
         return { valid: false, message: 'Password must be a string.' };
     }
-    if (password.length < 10) {
-        return { valid: false, message: 'Password must be at least 10 characters long.' };
+
+    if (password.length < 12) {
+        return { valid: false, message: 'Password must be at least 12 characters long.' };
     }
+
     if (!/[A-Z]/.test(password)) {
         return { valid: false, message: 'Password must contain at least one uppercase letter.' };
     }
+
     if (!/[a-z]/.test(password)) {
         return { valid: false, message: 'Password must contain at least one lowercase letter.' };
     }
+
     if (!/[0-9]/.test(password)) {
         return { valid: false, message: 'Password must contain at least one number.' };
     }
+
     if (!/[^A-Za-z0-9]/.test(password)) {
         return { valid: false, message: 'Password must contain at least one special character.' };
     }
+
+    const normalizedPassword = password.toLowerCase();
+    if (COMMON_PASSWORDS.has(normalizedPassword)) {
+        return { valid: false, message: 'Password is too common and easily guessable.' };
+    }
+
+    const normalizedUsername = typeof username === 'string' ? username.trim().toLowerCase() : '';
+    if (normalizedUsername && normalizedPassword.includes(normalizedUsername)) {
+        return { valid: false, message: 'Password must not contain your username.' };
+    }
+
+    const entropy = calculateShannonEntropy(password);
+    if (entropy < 3) {
+        return { valid: false, message: 'Password must have a minimum Shannon entropy of 3.0 bits.' };
+    }
+
     return { valid: true, message: null };
 }
 
