@@ -169,6 +169,8 @@ class ModularGameServer extends EventEmitter {
                 }
 
                 const room = this.roomManager.getRoom(sanitizedRoomId);
+                console.log('Player attempting to join room:', sanitizedRoomId, 'Socket ID:', socket.id);
+                console.log('Room exists:', !!room, 'Room data:', room?.toJSON());
                 if (!room) {
                     throw new Error(`Room ${sanitizedRoomId} does not exist.`);
                 }
@@ -178,14 +180,17 @@ class ModularGameServer extends EventEmitter {
                 const player = getPlayer();
                 await this.roomManager.joinRoom(room.id, {
                     id: socket.id,
-                    displayName: player?.username || player?.displayName || 'Player',
+                    displayName: player?.username || player?.displayName || 'Guest',
                     metadata: { account: player?.account || null },
                     isReady: false,
                 });
+                const updatedRoom = this.roomManager.getRoom(room.id);
+                console.log('Room after join:', updatedRoom?.toJSON());
                 setPlayerRoom(room.id);
                 socket.join(room.id);
-                socket.emit('joinedMatchLobby', { room: room.toJSON(), yourId: socket.id });
-                this.io.to(room.id).emit('roomStateUpdate', room.toJSON());
+                const roomState = updatedRoom ? updatedRoom.toJSON() : room.toJSON();
+                socket.emit('joinedMatchLobby', { room: roomState, yourId: socket.id });
+                this.io.to(room.id).emit('roomStateUpdate', roomState);
             } catch (error) {
                 socket.emit('error', error.message);
             }
