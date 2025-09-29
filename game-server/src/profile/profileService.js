@@ -99,7 +99,7 @@ class ProfileService {
         const store = this.readStore();
         const record = store.users[key];
         if (record) {
-            this.cache.set(key, record).catch(() => {});
+            void this._setCacheEntry(key, record);
             return { ...record };
         }
         return null;
@@ -121,7 +121,7 @@ class ProfileService {
         const store = this.readStore();
         const record = store.users[key];
         if (record) {
-            this.cache.set(key, record).catch(() => {});
+            await this._setCacheEntry(key, record);
             return { ...record };
         }
         return null;
@@ -168,7 +168,7 @@ class ProfileService {
 
         if (mutated) {
             this.writeStore(store);
-            this.cache.set(key, record).catch(() => {});
+            void this._setCacheEntry(key, record);
             this.analytics.record('update', { username: key });
         }
 
@@ -187,7 +187,7 @@ class ProfileService {
         store.users[key].wins = (store.users[key].wins || 0) + Number(amount || 0);
         const totalWins = store.users[key].wins;
         this.writeStore(store);
-        this.cache.set(key, store.users[key]).catch(() => {});
+        void this._setCacheEntry(key, store.users[key]);
         this.analytics.record('win', { username: key });
         return totalWins;
     }
@@ -205,7 +205,7 @@ class ProfileService {
         const previousPath = record.avatarPath;
         record.avatarPath = avatarPath;
         this.writeStore(store);
-        this.cache.set(key, record).catch(() => {});
+        void this._setCacheEntry(key, record);
         this.analytics.record('avatarUpload', { username: key });
         return previousPath || null;
     }
@@ -218,7 +218,7 @@ class ProfileService {
         const store = this.readStore();
         store.users[key] = { ...(store.users[key] || { username }), ...payload };
         this.writeStore(store);
-        this.cache.set(key, store.users[key]).catch(() => {});
+        void this._setCacheEntry(key, store.users[key]);
         return { ...store.users[key] };
     }
 
@@ -239,6 +239,14 @@ class ProfileService {
             cache: this.cache.stats(),
             displayNames: this._displayNameIndex.size,
         };
+    }
+
+    async _setCacheEntry(key, value, options = {}) {
+        try {
+            await this.cache.set(key, value, options);
+        } catch (error) {
+            this.logger.error?.('Failed to update profile cache:', error);
+        }
     }
 
     _ensureDataFile() {
