@@ -83,13 +83,13 @@ export class ProfileManager {
     };
   }
 
-  getGuestProfile() {
+  getGuestProfile(wins = 0) {
     const storedName = this.getStoredDisplayName();
     return {
       isGuest: true,
       username: DEFAULT_GUEST_NAME,
       displayName: storedName || DEFAULT_GUEST_NAME,
-      wins: 0,
+      wins: Number.isFinite(Number(wins)) ? Math.max(0, Math.floor(wins)) : 0,
       avatarPath: this.getStoredAvatarPath()
     };
   }
@@ -111,7 +111,8 @@ export class ProfileManager {
         this.profile = this.normalizeProfile(data.user, { isGuest: false });
         this.storeDisplayName(this.profile.displayName);
       } else {
-        this.profile = this.getGuestProfile();
+        const guestWins = Number.isFinite(Number(data?.guest?.wins)) ? Number(data.guest.wins) : 0;
+        this.profile = this.getGuestProfile(guestWins);
       }
     } catch (error) {
       console.warn('Failed to load session profile.', error);

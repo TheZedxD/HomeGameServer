@@ -4,11 +4,15 @@ const { buildGameInstance } = require('../../core');
 
 const BOARD_SIZE = 3;
 const PLAYER_MARKERS = ['X', 'O'];
+const SERIES_WINS_REQUIRED = 2;
 
 class PlaceMarkStrategy {
     execute({ state, playerManager, playerId, payload }) {
         if (!playerManager.hasPlayer(playerId)) {
             return { error: 'Player not part of this game.' };
+        }
+        if (state.isComplete) {
+            return { error: 'Series already complete.' };
         }
         if (state.isRoundComplete) {
             return { error: 'Round already finished. Reset to play again.' };
@@ -16,7 +20,8 @@ class PlaceMarkStrategy {
         if (!state.turnOrder || state.turnOrder.length < 2) {
             return { error: 'Game is not ready yet.' };
         }
-        if (state.turn !== playerId) {
+        const turnId = state.currentPlayerId || state.turnOrder[0];
+        if (playerId !== turnId) {
             return { error: 'It is not your turn.' };
         }
 
@@ -40,22 +45,19 @@ class PlaceMarkStrategy {
 
         const victory = detectWinner(nextState.board);
         if (victory) {
-            nextState.isRoundComplete = true;
-            nextState.winner = findPlayerByMarker(nextState.players, victory.marker);
-            nextState.roundOutcome = {
+            const winnerId = findPlayerByMarker(nextState.players, victory.marker);
+            concludeRound(nextState, {
                 result: 'win',
-                playerId: nextState.winner,
+                playerId: winnerId,
                 marker: victory.marker,
                 winningLine: victory.line,
-            };
-            nextState.turn = null;
+            });
         } else if (isBoardFull(nextState.board)) {
-            nextState.isRoundComplete = true;
-            nextState.winner = null;
-            nextState.roundOutcome = { result: 'draw' };
-            nextState.turn = null;
+            concludeRound(nextState, { result: 'draw' });
         } else {
-            nextState.turn = getNextTurn(state.turnOrder, playerId);
+            const nextTurnId = getNextTurn(state.turnOrder, playerId);
+            nextState.currentPlayerId = nextTurnId;
+            nextState.turn = nextTurnId ? nextState.players?.[nextTurnId]?.marker || null : null;
             nextState.roundOutcome = null;
         }
 
@@ -75,6 +77,9 @@ class ResetRoundStrategy {
         if (!state.isRoundComplete) {
             return { error: 'Round is still in progress.' };
         }
+        if (state.isComplete) {
+            return { error: 'Series already finished.' };
+        }
         if (!state.turnOrder || state.turnOrder.length < 2) {
             return { error: 'Not enough players to reset the round.' };
         }
@@ -87,10 +92,16 @@ class ResetRoundStrategy {
         nextState.board = createEmptyBoard();
         nextState.isRoundComplete = false;
         nextState.winner = null;
+        nextState.winnerName = null;
+        nextState.winnerId = null;
         nextState.round += 1;
         nextState.roundOutcome = null;
         nextState.lastMove = null;
-        nextState.turn = getStartingPlayerForRound(state.turnOrder, nextState.round);
+        nextState.awaitingReset = false;
+        nextState.roundCompletedAt = null;
+        const nextTurnId = getStartingPlayerForRound(state.turnOrder, nextState.round);
+        nextState.currentPlayerId = nextTurnId;
+        nextState.turn = nextTurnId ? nextState.players?.[nextTurnId]?.marker || null : null;
 
         return {
             apply() {
@@ -113,6 +124,76 @@ function isValidCoordinate(value) {
 
 function cloneState(state = {}) {
     return JSON.parse(JSON.stringify(state));
+}
+
+function normalizeScore(score = {}) {
+    const normalized = {};
+    for (const marker of PLAYER_MARKERS) {
+        const value = Number.isFinite(Number(score?.[marker])) ? Number(score[marker]) : 0;
+        normalized[marker] = value;
+    }
+    return normalized;
+}
+
+function concludeRound(state, outcome = {}) {
+    const normalizedScore = normalizeScore(state.score);
+    state.score = normalizedScore;
+    state.isRoundComplete = true;
+    state.roundOutcome = outcome || null;
+    state.currentPlayerId = null;
+    state.turn = null;
+    state.roundCompletedAt = Date.now();
+
+    if (outcome.result === 'win' && outcome.marker) {
+        normalizedScore[outcome.marker] = (normalizedScore[outcome.marker] || 0) + 1;
+        const winnerId = outcome.playerId || findPlayerByMarker(state.players, outcome.marker) || null;
+        state.winner = winnerId;
+        state.winnerId = winnerId;
+        state.winnerName = winnerId ? state.players?.[winnerId]?.displayName || null : null;
+        if (winnerId && normalizedScore[outcome.marker] >= SERIES_WINS_REQUIRED) {
+            state.seriesWinner = winnerId;
+            state.seriesWinnerMarker = outcome.marker;
+            state.seriesWinnerName = state.winnerName;
+            state.isComplete = true;
+            state.gameOver = true;
+            state.awaitingReset = false;
+        } else {
+            state.seriesWinner = state.seriesWinner || null;
+            state.seriesWinnerMarker = state.seriesWinnerMarker || null;
+            state.seriesWinnerName = state.seriesWinner ? state.players?.[state.seriesWinner]?.displayName || null : null;
+            state.gameOver = false;
+            state.awaitingReset = true;
+        }
+    } else {
+        state.winner = null;
+        state.winnerId = null;
+        state.winnerName = null;
+        state.seriesWinner = state.seriesWinner || null;
+        state.seriesWinnerMarker = state.seriesWinnerMarker || null;
+        state.seriesWinnerName = state.seriesWinner ? state.players?.[state.seriesWinner]?.displayName || null : null;
+        state.gameOver = Boolean(state.seriesWinner);
+        state.awaitingReset = !state.seriesWinner;
+    }
+}
+
+function prepareNextRound(state) {
+    const next = cloneState(state);
+    const nextRound = (state.round || 1) + 1;
+    next.board = createEmptyBoard();
+    next.isRoundComplete = false;
+    next.awaitingReset = false;
+    next.roundOutcome = null;
+    next.lastMove = null;
+    next.winner = null;
+    next.winnerId = null;
+    next.winnerName = null;
+    next.round = nextRound;
+    next.roundCompletedAt = null;
+    next.gameOver = Boolean(next.seriesWinner);
+    const nextTurnId = getStartingPlayerForRound(next.turnOrder, nextRound);
+    next.currentPlayerId = nextTurnId;
+    next.turn = nextTurnId ? next.players?.[nextTurnId]?.marker || null : null;
+    return next;
 }
 
 function detectWinner(board) {
@@ -178,17 +259,30 @@ function initializeGameState(game, participants) {
     });
 
     const snapshot = game.stateManager.snapshot().state;
+    const startingPlayerId = turnOrder[0] || null;
+    const startingMarker = startingPlayerId ? assignments[startingPlayerId]?.marker || null : null;
     const nextState = {
         ...snapshot,
         board: createEmptyBoard(),
         turnOrder,
         players: assignments,
-        turn: turnOrder[0] || null,
+        turn: startingMarker,
+        currentPlayerId: startingPlayerId,
         isRoundComplete: false,
         winner: null,
+        winnerId: null,
+        winnerName: null,
         round: 1,
         roundOutcome: null,
         lastMove: null,
+        score: normalizeScore(snapshot?.score),
+        seriesWinner: null,
+        seriesWinnerMarker: null,
+        seriesWinnerName: null,
+        awaitingReset: false,
+        roundCompletedAt: null,
+        gameOver: false,
+        isComplete: false,
     };
 
     game.stateManager.replace(nextState, { system: 'tic-tac-toe:init' });
@@ -201,21 +295,44 @@ function attachRoundEndEmitter(game, roomId) {
         if (!state.isRoundComplete) {
             return;
         }
-        if (state.round <= lastEmittedRound) {
+        const roundNumber = state.round || 0;
+        if (roundNumber <= lastEmittedRound) {
             return;
         }
-        lastEmittedRound = state.round;
-        const winnerId = state.winner || null;
-        const winnerMarker = winnerId ? state.players?.[winnerId]?.marker || null : null;
+        lastEmittedRound = roundNumber;
+        const winnerId = state.roundOutcome?.playerId || state.seriesWinner || null;
+        const winnerMarker = state.roundOutcome?.marker
+            || state.seriesWinnerMarker
+            || (winnerId ? state.players?.[winnerId]?.marker || null : null);
+        const winnerName = winnerId ? state.players?.[winnerId]?.displayName || null : null;
         const eventPayload = {
             roomId,
-            round: state.round,
+            round: roundNumber,
             board: state.board.map(row => row.slice()),
             winnerId,
             winnerMarker,
+            winnerName,
             outcome: state.roundOutcome || null,
+            score: normalizeScore(state.score),
+            seriesWinnerId: state.seriesWinner || null,
+            seriesWinnerMarker: state.seriesWinnerMarker || null,
+            seriesWinnerName: state.seriesWinnerName || null,
         };
         game.stateManager.emit('roundEnd', eventPayload);
+
+        if (!state.seriesWinner && state.awaitingReset) {
+            setTimeout(() => {
+                game.stateManager.update((currentState) => {
+                    if (!currentState.isRoundComplete || currentState.seriesWinner) {
+                        return currentState;
+                    }
+                    if ((currentState.round || 0) !== roundNumber) {
+                        return currentState;
+                    }
+                    return prepareNextRound(currentState);
+                }, { system: 'tic-tac-toe:autoReset' });
+            }, 1000);
+        }
     };
     game.stateManager.on('stateChanged', handler);
 }
@@ -237,13 +354,24 @@ module.exports = {
                         roomId,
                         board: createEmptyBoard(),
                         turn: null,
+                        currentPlayerId: null,
                         turnOrder: [],
                         players: {},
                         round: 1,
                         isRoundComplete: false,
                         winner: null,
+                        winnerId: null,
+                        winnerName: null,
                         roundOutcome: null,
                         lastMove: null,
+                        score: normalizeScore(),
+                        seriesWinner: null,
+                        seriesWinnerMarker: null,
+                        seriesWinnerName: null,
+                        awaitingReset: false,
+                        roundCompletedAt: null,
+                        gameOver: false,
+                        isComplete: false,
                     },
                     strategies: {
                         placeMark: new PlaceMarkStrategy(),

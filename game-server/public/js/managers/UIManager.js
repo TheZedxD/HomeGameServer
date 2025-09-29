@@ -132,16 +132,22 @@ export class UIManager {
     this.gameUI.syncPlayers(players, (player, fallback) => this.derivePlayerLabel(player, fallback));
   }
 
-  updateScoreboardDisplay(score) {
-    this.gameUI.updateScoreboard(score);
+  setGameType(gameId) {
+    if (typeof this.gameUI.setGameType === 'function') {
+      this.gameUI.setGameType(gameId);
+    }
+  }
+
+  updateScoreboardDisplay(score, context) {
+    this.gameUI.updateScoreboard(score, context);
   }
 
   setScoreboardVisibility(isVisible) {
     this.gameUI.setScoreboardVisibility(isVisible);
   }
 
-  updateTurnIndicator(gameState) {
-    this.gameUI.updateTurnIndicator(gameState);
+  updateTurnIndicator(gameState, context) {
+    this.gameUI.updateTurnIndicator(gameState, context);
   }
 
   showGameOver(message) {
