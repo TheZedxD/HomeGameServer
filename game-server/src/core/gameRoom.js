@@ -1,7 +1,6 @@
 'use strict';
 
 const EventEmitter = require('events');
-const GameStateManager = require('./gameStateManager');
 const PlayerManager = require('./playerManager');
 const StateSynchronizer = require('./stateSynchronizer');
 
@@ -13,6 +12,7 @@ class GameRoom extends EventEmitter {
         this.gameId = gameId;
         this.metadata = metadata;
         this.createdAt = Date.now();
+        this.playerLimits = playerLimits;
         this.playerManager = new PlayerManager(playerLimits);
         this.gameInstance = null;
         this.stateSynchronizer = null;
@@ -31,10 +31,24 @@ class GameRoom extends EventEmitter {
     detachGame() {
         if (this.stateSynchronizer) {
             this.stateSynchronizer.dispose();
+            this.stateSynchronizer = null;
         }
-        this.stateSynchronizer = null;
-        this.stateManager = new GameStateManager();
+
+        if (this.gameInstance?.removeAllListeners) {
+            this.gameInstance.removeAllListeners();
+        }
+
+        if (typeof this.gameInstance?.destroy === 'function') {
+            this.gameInstance.destroy();
+        }
+
+        if (this.stateManager?.removeAllListeners) {
+            this.stateManager.removeAllListeners();
+        }
+
+        this.stateManager = null;
         this.gameInstance = null;
+        this.playerManager = new PlayerManager(this.playerLimits);
         this.emit('gameDetached', { roomId: this.id });
     }
 
