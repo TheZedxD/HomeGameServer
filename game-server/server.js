@@ -49,6 +49,16 @@ const modularGameServer = createModularGameServer({
     pluginDirectory: path.join(__dirname, 'src/plugins'),
 });
 
+const emitOpenRoomsUpdate = () => {
+    const openRooms = getOpenRooms();
+    console.log('Broadcasting updated room list to clients. Count:', Object.keys(openRooms).length);
+    io.emit('updateRoomList', openRooms);
+};
+
+modularGameServer.roomManager.on('roomCreated', emitOpenRoomsUpdate);
+modularGameServer.roomManager.on('roomUpdated', emitOpenRoomsUpdate);
+modularGameServer.roomManager.on('roomRemoved', emitOpenRoomsUpdate);
+
 function emitSocketError({ socket, player, action, error, message = 'Operation failed. Please try again.', code = 'OPERATION_FAILED' }) {
     const context = {
         userId: socket?.id || null,
@@ -1234,17 +1244,24 @@ function syncPlayerInRoom(socket) {
 
 function getOpenRooms() {
     const openRooms = {};
+    console.log('Getting open rooms, total rooms:', modularGameServer.roomManager.rooms.size);
+
     for (const room of modularGameServer.roomManager.rooms.values()) {
         const playerCount = room.playerManager.players.size;
+        console.log('Room:', room.id, 'Players:', playerCount, 'Max:', room.playerManager.maxPlayers, 'Mode:', room.metadata.mode);
+
         if (room.metadata.mode === 'lan' && playerCount < room.playerManager.maxPlayers) {
             openRooms[room.id] = {
                 roomId: room.id,
                 gameType: room.gameId,
                 playerCount,
                 maxPlayers: room.playerManager.maxPlayers,
+                hostId: room.hostId,
             };
         }
     }
+
+    console.log('Open rooms to broadcast:', openRooms);
     return openRooms;
 }
 
