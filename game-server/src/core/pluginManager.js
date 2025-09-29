@@ -40,7 +40,7 @@ class PluginManager extends EventEmitter {
             if (!plugin || typeof plugin.register !== 'function') {
                 throw new Error(`Plugin at ${resolved} must export a register(registry) function.`);
             }
-            const definition = plugin.register(this.registry, {
+            const definition = await plugin.register(this.registry, {
                 logger: this.logger,
             });
             if (!definition || !definition.id) {
@@ -66,13 +66,13 @@ class PluginManager extends EventEmitter {
         return true;
     }
 
-    reload(id) {
+    async reload(id) {
         const existing = this.plugins.get(id);
         if (!existing) {
             throw new Error(`Cannot reload unknown plugin ${id}`);
         }
         this.unload(id);
-        return this.loadPlugin(existing.path);
+        return await this.loadPlugin(existing.path);
     }
 
     _watch(directory) {

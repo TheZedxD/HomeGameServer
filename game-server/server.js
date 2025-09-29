@@ -329,6 +329,17 @@ const profileService = createProfileService({
 });
 profileService.initialize();
 
+async function handleProfileServiceShutdown(signal) {
+    try {
+        await profileService.shutdown();
+    } catch (error) {
+        console.error(
+            `Profile service shutdown error${signal ? ` (${signal})` : ''}:`,
+            error,
+        );
+    }
+}
+
 const guestSessionManager = new GuestSessionManager({
     filePath: path.join(DATA_DIR, 'guest-sessions.json'),
     secret: GUEST_SESSION_SECRET,
@@ -338,9 +349,15 @@ const guestSessionManager = new GuestSessionManager({
 process.on('exit', () => { guestSessionManager.stop(); sessionMaintenance.stop(); });
 process.on('SIGTERM', () => { guestSessionManager.stop(); sessionMaintenance.stop(); });
 process.on('SIGINT', () => { guestSessionManager.stop(); sessionMaintenance.stop(); });
-process.on('exit', () => { profileService.shutdown().catch(() => {}); });
-process.on('SIGTERM', () => { profileService.shutdown().catch((error) => console.error('Profile service shutdown error:', error)); });
-process.on('SIGINT', () => { profileService.shutdown().catch((error) => console.error('Profile service shutdown error:', error)); });
+process.on('exit', () => {
+    handleProfileServiceShutdown('exit');
+});
+process.on('SIGTERM', async () => {
+    await handleProfileServiceShutdown('SIGTERM');
+});
+process.on('SIGINT', async () => {
+    await handleProfileServiceShutdown('SIGINT');
+});
 
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
