@@ -55,8 +55,30 @@ if /I "!RUN_TESTS_VALUE!"=="true" (
 
 if not defined PORT set "PORT=8081"
 
+for /f "usebackq tokens=* delims=" %%I in (`powershell -NoProfile -Command "($addresses = Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -ne '127.0.0.1' -and $_.IPAddress -notlike '169.254.*' }) | Select-Object -First 1 -ExpandProperty IPAddress"`) do set "SERVER_IP=%%I"
+
+if not defined SERVER_IP (
+  for /f "tokens=2 delims=:" %%I in ('ipconfig ^| findstr /R /C:"IPv4 Address"') do (
+    set "SERVER_IP=%%I"
+    goto :trim_ip
+  )
+)
+:trim_ip
+if defined SERVER_IP (
+  for /f "tokens=* delims= " %%I in ("!SERVER_IP!") do set "SERVER_IP=%%I"
+)
+if not defined SERVER_IP set "SERVER_IP=127.0.0.1"
+
 echo [*] Starting server on :%PORT%
-call npm start
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$port = if ($env:PORT) { $env:PORT } else { '8081' }; ^
+   $npm = Start-Process npm -ArgumentList 'start' -NoNewWindow -PassThru; ^
+   $ip = if ($env:SERVER_IP) { $env:SERVER_IP } else { '127.0.0.1' }; ^
+   Write-Host ('[*] Listening on http://{0}:{1} and http://localhost:{1}' -f $ip, $port); ^
+   Write-Host '[*] Press Ctrl+C to stop the server.'; ^
+   $npm.WaitForExit(); ^
+   exit $npm.ExitCode"
+
 if errorlevel 1 (
   echo [!] Server exited with error.
   pause
