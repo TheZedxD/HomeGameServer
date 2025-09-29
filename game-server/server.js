@@ -496,7 +496,10 @@ app.post('/signup', authLimiter, csrfMiddleware, (req, res) => {
     }
     const displayName = displayNameValidation.value || username;
 
-    const { valid: isPasswordValid, message: passwordError } = validatePasswordInput(password);
+    const { valid: isPasswordValid, message: passwordError } = validatePasswordInput(password, {
+        username,
+        identifier: req.ip,
+    });
     if (!isPasswordValid) {
         return res.status(400).send(passwordError || 'Password does not meet complexity requirements.');
     }
