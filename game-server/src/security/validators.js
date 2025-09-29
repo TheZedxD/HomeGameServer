@@ -22,6 +22,7 @@ const passwordValidationAttempts = new Map();
 const ACCOUNT_NAME_REGEX = /^[a-zA-Z0-9_-]{3,24}$/;
 const DISPLAY_NAME_REGEX = /^[\p{L}\p{N} _'’.-]{1,24}$/u;
 const ROOM_CODE_REGEX = /^[A-Z0-9]{3,10}$/;
+const SERVER_GENERATED_ROOM_CODE_REGEX = /^[A-Z]+_[A-F0-9]{8}$/i;
 
 function normalizeWhitespace(value) {
     return String(value)
@@ -183,8 +184,33 @@ function sanitizeRoomCode(roomCode) {
     if (typeof roomCode !== 'string') {
         return null;
     }
-    const upper = roomCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    return ROOM_CODE_REGEX.test(upper) ? upper : null;
+
+    const trimmed = roomCode.trim();
+    if (!trimmed) {
+        return null;
+    }
+
+    const upper = trimmed.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (ROOM_CODE_REGEX.test(upper)) {
+        return upper;
+    }
+
+    if (SERVER_GENERATED_ROOM_CODE_REGEX.test(trimmed)) {
+        const match = trimmed.match(/^([A-Z]+)_([A-F0-9]{8})$/i);
+        if (!match) {
+            return null;
+        }
+        const [, prefix, suffix] = match;
+        return `${prefix.toLowerCase()}_${suffix.toLowerCase()}`;
+    }
+
+    const compactMatch = trimmed.match(/^([A-Z]+)([A-F0-9]{8})$/i);
+    if (compactMatch) {
+        const [, prefix, suffix] = compactMatch;
+        return `${prefix.toLowerCase()}_${suffix.toLowerCase()}`;
+    }
+
+    return null;
 }
 
 function sanitizeTextInput(input, { maxLength = 256, allowNewLines = false } = {}) {
