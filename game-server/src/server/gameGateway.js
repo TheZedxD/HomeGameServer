@@ -95,7 +95,8 @@ class ModularGameServer extends EventEmitter {
     attachSocket(socket, { getPlayer, setPlayerRoom, clearPlayerRoom }) {
         socket.emit('availableGames', this.registry.list().map(({ id, name, minPlayers, maxPlayers }) => ({ id, name, minPlayers, maxPlayers })));
         socket.emit('updateRoomList', this._serializeRooms());
-        socket.on('createGame', (payload = {}) => {
+        socket.on('createGame', async (payload = {}) => {
+            console.log('createGame received:', payload, 'from socket:', socket.id);
             try {
                 if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
                     throw new Error('Create game payload must be an object.');
@@ -141,17 +142,21 @@ class ModularGameServer extends EventEmitter {
                     },
                     metadata: { mode },
                 });
-                this.roomManager.joinRoom(room.id, {
+                console.log('Room created:', room.id, room.toJSON());
+                await this.roomManager.joinRoom(room.id, {
                     id: socket.id,
                     displayName: player?.username || player?.displayName || 'Player',
                     metadata: { account: player?.account || null },
                     isReady: true,
                 });
+                console.log('Host joined room:', room.id);
                 setPlayerRoom(room.id);
                 socket.join(room.id);
+                console.log('Broadcasting room state to:', room.id);
                 socket.emit('joinedMatchLobby', { room: room.toJSON(), yourId: socket.id });
                 this.io.to(room.id).emit('roomStateUpdate', room.toJSON());
             } catch (error) {
+                console.error('createGame error:', error);
                 this.logger.error('Failed to create game:', error);
                 socket.emit('error', error.message);
             }
