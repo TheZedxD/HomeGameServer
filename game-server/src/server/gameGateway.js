@@ -69,10 +69,16 @@ class ModularGameServer extends EventEmitter {
         this.roomManager.on('gameStarted', ({ roomId, state }) => {
             const room = this.roomManager.getRoom(roomId);
             if (room) {
+                const gameState = state?.state || {};
+                const players = Array.isArray(gameState.players)
+                    ? gameState.players
+                    : room.playerManager.list();
+                const turn = gameState.turnColor || gameState.turn || null;
                 this.io.to(roomId).emit('gameStart', {
                     gameState: state.state,
-                    players: room.playerManager.list(),
+                    players,
                     gameId: room.gameId,
+                    turn,
                 });
             }
             updateMetrics();

@@ -1250,10 +1250,11 @@ function getOpenRooms() {
         const playerCount = room.playerManager.players.size;
         console.log('Room:', room.id, 'Players:', playerCount, 'Max:', room.playerManager.maxPlayers, 'Mode:', room.metadata.mode);
 
-        if (room.metadata.mode === 'lan' && playerCount < room.playerManager.maxPlayers) {
+        if (playerCount < room.playerManager.maxPlayers) {
             openRooms[room.id] = {
                 roomId: room.id,
                 gameType: room.gameId,
+                mode: room.metadata.mode,
                 playerCount,
                 maxPlayers: room.playerManager.maxPlayers,
                 hostId: room.hostId,
