@@ -44,21 +44,30 @@ export class UIManager {
   showView(viewName) {
     const { views = {}, modals = {}, lobby = {} } = this.elements || {};
     Object.values(views || {}).forEach((view) => {
-      if (view) view.classList.add('hidden');
+      if (view && typeof view.classList?.add === 'function') {
+        view.classList.add('hidden');
+      }
     });
+
     const activeView = views?.[viewName];
-    if (activeView) {
+    if (activeView && typeof activeView.classList?.remove === 'function') {
       activeView.classList.remove('hidden');
       this.currentView = viewName;
     } else if (viewName) {
       console.warn(`Requested view "${viewName}" does not exist in the cached elements.`);
     }
-    lobby?.lobbyListContainer?.classList.toggle('hidden', viewName !== 'mainLobby');
-    if (viewName !== 'gameUI' && modals?.gameOver) {
-      if (this.modalManager) {
-        this.modalManager.closeModal(modals.gameOver, { returnFocus: false });
-      } else {
-        modals.gameOver.classList.add('hidden');
+
+    const lobbyContainer = lobby?.lobbyListContainer;
+    if (lobbyContainer && typeof lobbyContainer.classList?.toggle === 'function') {
+      lobbyContainer.classList.toggle('hidden', viewName !== 'mainLobby');
+    }
+
+    const gameOverModal = modals?.gameOver;
+    if (viewName !== 'gameUI' && gameOverModal) {
+      if (this.modalManager && typeof this.modalManager.closeModal === 'function') {
+        this.modalManager.closeModal(gameOverModal, { returnFocus: false });
+      } else if (typeof gameOverModal.classList?.add === 'function') {
+        gameOverModal.classList.add('hidden');
       }
     }
   }

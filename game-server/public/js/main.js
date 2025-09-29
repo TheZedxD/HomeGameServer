@@ -7,7 +7,6 @@ import { initializeWindowControls } from './ui/windowControls.js';
 async function loadNetworkInfo() {
   const ipElement = document.getElementById('server-ip');
   const urlElement = document.getElementById('server-url');
-  const localUrlElement = document.getElementById('server-local-url');
 
   if (!ipElement || !urlElement) {
     return;
@@ -16,9 +15,6 @@ async function loadNetworkInfo() {
   const setUnknown = () => {
     ipElement.textContent = 'Unknown';
     urlElement.textContent = 'Unknown';
-    if (localUrlElement) {
-      localUrlElement.textContent = 'Unknown';
-    }
   };
 
   try {
@@ -33,13 +29,8 @@ async function loadNetworkInfo() {
     const resolvedPort = Number.isFinite(parsedPort) ? parsedPort : 8081;
 
     const remoteUrl = `http://${resolvedIp}:${resolvedPort}`;
-    const localUrl = `http://localhost:${resolvedPort}`;
-
     ipElement.textContent = resolvedIp;
-    urlElement.textContent = remoteUrl;
-    if (localUrlElement) {
-      localUrlElement.textContent = localUrl;
-    }
+    urlElement.textContent = `${remoteUrl} / http://localhost:${resolvedPort}`;
   } catch (error) {
     console.warn('Unable to load network info.', error);
     setUnknown();
