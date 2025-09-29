@@ -38,7 +38,16 @@ async function loadNetworkInfo() {
 }
 
 async function initializeApp() {
-  const socket = io();
+  const socket = io({
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionAttempts: 5,
+    timeout: 10000
+  });
+  socket.on('connect', () => console.log('Socket connected:', socket.id));
+  socket.on('connect_error', (err) => console.error('Connection error:', err));
+  socket.on('disconnect', (reason) => console.log('Disconnected:', reason));
   const profileManager = new ProfileManager();
   const uiManager = new UIManager();
   const gameManager = new GameManager(socket, uiManager, profileManager);
