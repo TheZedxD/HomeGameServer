@@ -16,6 +16,7 @@ class StateSynchronizer extends EventEmitter {
             });
         };
         this.stateManager.on('stateChanged', this.listener);
+        this._timers = new Set();
         this.roundEndListener = (payload) => {
             this.emit('roundEnd', {
                 roomId: this.roomId,
@@ -26,12 +27,30 @@ class StateSynchronizer extends EventEmitter {
     }
 
     dispose() {
-        if (this.listener) {
-            this.stateManager.off('stateChanged', this.listener);
+        if (this.stateManager) {
+            if (this.listener) {
+                this.stateManager.off('stateChanged', this.listener);
+            }
+            if (this.roundEndListener) {
+                this.stateManager.off('roundEnd', this.roundEndListener);
+            }
         }
-        if (this.roundEndListener) {
-            this.stateManager.off('roundEnd', this.roundEndListener);
+
+        if (this._timers?.size) {
+            for (const timer of this._timers) {
+                clearTimeout(timer);
+                clearInterval(timer);
+            }
+            this._timers.clear();
         }
+
+        this.removeAllListeners();
+
+        this.listener = null;
+        this.roundEndListener = null;
+        this.stateManager = null;
+        this.roomId = null;
+        this._timers = null;
     }
 }
 

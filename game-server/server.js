@@ -535,7 +535,7 @@ app.get('/healthz', (req, res) => {
 const metricsRouter = metricsCollector.createRouter({ token: METRICS_TOKEN });
 app.use('/metrics', metricsRouter);
 
-let players = {};
+const players = new WeakMap();
 
 app.get('/api/csrf-token', (req, res) => {
     const sessionId = req.sessionID;
@@ -949,92 +949,128 @@ io.on('connection', (socket) => {
     const guestSession = identity.guestSession;
     const authUser = identity.user;
 
-    players[socket.id] = {
+    const playerState = {
         playerId: socket.id,
         inRoom: null,
         username: authUser?.displayName || guestSession?.data?.displayName || 'Guest',
         account: authUser?.username || null,
         guestId: guestSession?.id || null,
     };
-    if (players[socket.id].guestId) {
-        guestSessionManager.recordDisplayName(players[socket.id].guestId, players[socket.id].username);
+
+    players.set(socket, playerState);
+    socket.data.playerState = playerState;
+
+    if (playerState.guestId) {
+        guestSessionManager.recordDisplayName(playerState.guestId, playerState.username);
     }
     socket.emit('updateRoomList', getOpenRooms());
 
-    socket.on('linkAccount', ({ accountName, displayName }) => {
-        if (!players[socket.id]) return;
+    const handleLinkAccount = ({ accountName, displayName }) => {
+        const player = players.get(socket);
+        if (!player) return;
+
         const sanitizedAccount = sanitizeAccountName(accountName || '');
         const displayCandidate = displayName || sanitizedAccount || '';
         const { value: sanitizedDisplay } = validateDisplayNameInput(displayCandidate, {
             currentUsername: sanitizedAccount,
             uniquenessCheck: (value) => profileService.ensureDisplayNameAvailability(value, sanitizedAccount),
         });
-        if (sanitizedAccount) {
-            players[socket.id].account = sanitizedAccount;
-        }
-        if (sanitizedDisplay) {
-            players[socket.id].username = sanitizedDisplay;
-        } else if (sanitizedAccount) {
-            players[socket.id].username = sanitizedAccount;
-        }
-        if (players[socket.id].guestId) {
-            guestSessionManager.recordDisplayName(players[socket.id].guestId, players[socket.id].username);
-        }
-        syncPlayerInRoom(socket.id);
-    });
 
-    socket.on('setUsername', (rawName) => {
-        if (!players[socket.id]) return;
+        if (sanitizedAccount) {
+            player.account = sanitizedAccount;
+        }
+
+        if (sanitizedDisplay) {
+            player.username = sanitizedDisplay;
+        } else if (sanitizedAccount) {
+            player.username = sanitizedAccount;
+        }
+
+        if (player.guestId) {
+            guestSessionManager.recordDisplayName(player.guestId, player.username);
+        }
+
+        syncPlayerInRoom(socket);
+    };
+
+    const handleSetUsername = (rawName) => {
+        const player = players.get(socket);
+        if (!player) return;
+
         const { value: sanitized, error } = validateDisplayNameInput(rawName, {
-            currentUsername: players[socket.id].account,
-            uniquenessCheck: (value) => profileService.ensureDisplayNameAvailability(value, players[socket.id].account),
+            currentUsername: player.account,
+            uniquenessCheck: (value) => profileService.ensureDisplayNameAvailability(value, player.account),
         });
+
         if (sanitized) {
-            players[socket.id].username = sanitized;
-        } else if (error && !players[socket.id].username) {
-            players[socket.id].username = 'Guest';
+            player.username = sanitized;
+        } else if (error && !player.username) {
+            player.username = 'Guest';
         }
-        if (players[socket.id].guestId) {
-            guestSessionManager.recordDisplayName(players[socket.id].guestId, players[socket.id].username);
+
+        if (player.guestId) {
+            guestSessionManager.recordDisplayName(player.guestId, player.username);
         }
-        syncPlayerInRoom(socket.id);
-    });
+
+        syncPlayerInRoom(socket);
+    };
+
+    socket.on('linkAccount', handleLinkAccount);
+    socket.on('setUsername', handleSetUsername);
+
     modularGameServer.attachSocket(socket, {
-        getPlayer: () => players[socket.id],
+        getPlayer: () => players.get(socket),
         setPlayerRoom: (roomId) => {
-            if (!players[socket.id]) return;
-            players[socket.id].inRoom = roomId;
-            if (players[socket.id]?.guestId) {
-                guestSessionManager.recordLastRoom(players[socket.id].guestId, {
+            const player = players.get(socket);
+            if (!player) return;
+            player.inRoom = roomId;
+
+            if (player.guestId) {
+                guestSessionManager.recordLastRoom(player.guestId, {
                     roomId,
                     gameType: modularGameServer.roomManager.getRoom(roomId)?.gameId || null,
                 });
             }
-            syncPlayerInRoom(socket.id);
+
+            syncPlayerInRoom(socket);
         },
         clearPlayerRoom: () => {
-            if (!players[socket.id]) return;
-            players[socket.id].inRoom = null;
+            const player = players.get(socket);
+            if (!player) return;
+            player.inRoom = null;
         },
     });
 
-    socket.on('disconnect', () => {
+    const handleDisconnect = () => {
         console.log(`User disconnected: ${socket.id}`);
-        if (players[socket.id]?.guestId) {
-            guestSessionManager.recordLastRoom(players[socket.id].guestId, null);
+
+        socket.off('linkAccount', handleLinkAccount);
+        socket.off('setUsername', handleSetUsername);
+
+        const player = players.get(socket);
+        if (player?.guestId) {
+            guestSessionManager.recordLastRoom(player.guestId, null);
         }
-        delete players[socket.id];
+        if (player) {
+            player.inRoom = null;
+        }
+
+        players.delete(socket);
+        delete socket.data.playerState;
+
         io.emit('updateRoomList', getOpenRooms());
         metricsCollector.decrementSocketConnections();
-    });
+    };
+
+    socket.on('disconnect', handleDisconnect);
 });
 
-function syncPlayerInRoom(socketId) {
-    const player = players[socketId];
+function syncPlayerInRoom(socket) {
+    const player = players.get(socket);
     if (!player?.inRoom) return;
     const room = modularGameServer.roomManager.getRoom(player.inRoom);
     if (!room) return;
-    const participant = room.playerManager.getPlayer(socketId);
+    const participant = room.playerManager.getPlayer(socket.id);
     if (!participant) return;
     participant.displayName = player.username || participant.displayName;
     participant.metadata = {
@@ -1323,7 +1359,12 @@ function verifyAndUpdatePassword(store, usernameKey, password) {
 }
 
 function recordSeriesWin(winnerSocketId) {
-    const participant = players[winnerSocketId];
+    const socket = io.sockets.sockets.get(winnerSocketId);
+    if (!socket) {
+        return;
+    }
+
+    const participant = players.get(socket);
     if (!participant) {
         return;
     }
