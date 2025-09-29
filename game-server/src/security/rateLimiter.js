@@ -81,7 +81,7 @@ function createSocketRateLimiter({ windowMs, max, keyGenerator = (socket) => {
     const limiter = new SlidingWindowRateLimiter({ windowMs, max });
     return function socketRateLimiter(packet, next) {
         const socket = this; // eslint-disable-line no-invalid-this
-        const key = keyGenerator(socket, packet);
+        const key = socket ? keyGenerator(socket, packet) : 'unknown';
         if (limiter.allow(key)) {
             return next();
         }
