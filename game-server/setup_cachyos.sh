@@ -14,17 +14,13 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[*] Installing dependencies with npm ci..."
+echo "[*] Installing dependencies with npm install..."
 if [ -d node_modules ] && [ ! -w node_modules ]; then
   echo "[!] node_modules exists but is not writable by $(whoami). Please fix permissions (e.g., chown) before continuing." >&2
   exit 1
 fi
 
-if ! npm ci; then
-  status=$?
-  echo "[!] npm ci failed (exit code $status). Retrying with npm install to refresh lockfile..." >&2
-  npm install
-fi
+npm install
 
 echo "[*] Ensuring environment file exists..."
 if [ ! -f .env ]; then

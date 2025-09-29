@@ -79,9 +79,6 @@ else
   sudo pacman -S --noconfirm --needed nodejs npm
 fi
 
-npm_install_cmd=(npm ci)
-npm_fallback_cmd=(npm install)
-
 if [ -d node_modules ]; then
   if (( EUID == 0 )) && [[ -n "${SUDO_USER:-}" ]] && command -v sudo >/dev/null 2>&1; then
     if ! sudo -H -u "$SUDO_USER" -- test -w node_modules; then
@@ -94,16 +91,7 @@ if [ -d node_modules ]; then
   fi
 fi
 
-if [ ! -d node_modules ]; then
-  echo "[*] Installing Node deps via npm ci..."
-  if ! run_as_invoking_user "${npm_install_cmd[@]}"; then
-    status=$?
-    echo "[!] npm ci failed (exit code $status). Falling back to npm install..." >&2
-    run_as_invoking_user "${npm_fallback_cmd[@]}"
-  fi
-else
-  echo "[*] node_modules exists; refreshing dependencies with npm install"
-  run_as_invoking_user "${npm_fallback_cmd[@]}"
-fi
+echo "[*] Installing Node.js dependencies with npm install..."
+run_as_invoking_user npm install
 
 echo "[*] Done."

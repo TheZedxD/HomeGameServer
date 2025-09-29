@@ -14,7 +14,7 @@ const {
 } = require('../src/core');
 const { createProfileService } = require('../src/profile/profileService');
 const { processAvatar } = require('../src/profile/avatarProcessor');
-const { validateDisplayNameInput } = require('../src/security/validators');
+const { sanitizeRoomCode, validateDisplayNameInput } = require('../src/security/validators');
 
 const SAMPLE_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQImWNgYGD4DwABBAEAH0UBPwAAAABJRU5ErkJggg==', 'base64');
 
@@ -180,6 +180,15 @@ test('Avatar processor normalizes output images', async () => {
     assert.ok(result.outputWidth <= 32);
     assert.ok(result.outputHeight <= 32);
     assert.ok(result.buffer.length > 0, 'Processed avatar should have data');
+});
+
+test('sanitizeRoomCode accepts legacy and server-generated codes', () => {
+    assert.strictEqual(sanitizeRoomCode('ABC123'), 'ABC123');
+    assert.strictEqual(sanitizeRoomCode('abc123'), 'ABC123', 'Manual codes should normalize to uppercase');
+    assert.strictEqual(sanitizeRoomCode('lan_75c40e28'), 'lan_75c40e28');
+    assert.strictEqual(sanitizeRoomCode('LAN_75C40E28'), 'lan_75c40e28', 'Server codes should normalize to lowercase prefix and hex');
+    assert.strictEqual(sanitizeRoomCode('LAN75C40E28'), 'lan_75c40e28', 'Codes without separator should still map to generated format');
+    assert.strictEqual(sanitizeRoomCode('??'), null);
 });
 
 (async () => {
