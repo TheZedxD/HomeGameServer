@@ -6,7 +6,7 @@ import {
 import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
 import { ErrorHandler } from '../utils/ErrorHandler.js';
 
-export function createProfileUI(elements, toast) {
+export function createProfileUI(elements, toast, modalManager) {
   const { identity, profile, prompt } = elements;
   let profileManager = null;
 
@@ -121,8 +121,13 @@ export function createProfileUI(elements, toast) {
     }
   };
 
-  const hideProfilePrompt = (remember = false) => {
-    elements.modals.profilePrompt?.classList.add('hidden');
+  const hideProfilePrompt = (remember = false, { restoreFocus = true } = {}) => {
+    const modal = elements.modals.profilePrompt;
+    if (modalManager && modal) {
+      modalManager.closeModal(modal, { returnFocus: restoreFocus });
+    } else {
+      modal?.classList.add('hidden');
+    }
     if (remember) setLocalStorageItem(PROFILE_PROMPT_DISMISSED_KEY, 'true');
   };
 
@@ -146,14 +151,21 @@ export function createProfileUI(elements, toast) {
     });
     profile.changeAvatarButton?.addEventListener('click', () => profile.avatarInput?.click());
     profile.avatarInput?.addEventListener('change', handleAvatarSelection);
-    const focusIdentity = () => { hideProfilePrompt(false); identity.input?.focus(); };
+    const focusIdentity = () => {
+      hideProfilePrompt(false, { restoreFocus: false });
+      identity.input?.focus();
+    };
     profile.viewProfileButton?.addEventListener('click', focusIdentity);
     prompt.editButton?.addEventListener('click', focusIdentity);
     prompt.dismissButton?.addEventListener('click', () => hideProfilePrompt(true));
     elements.game.exitButton?.addEventListener('click', () => onLeaveGame?.());
     elements.game.gameOverExitButton?.addEventListener('click', () => {
       onLeaveGame?.();
-      elements.modals.gameOver?.classList.add('hidden');
+      if (modalManager && elements.modals.gameOver) {
+        modalManager.closeModal(elements.modals.gameOver);
+      } else {
+        elements.modals.gameOver?.classList.add('hidden');
+      }
     });
   };
 
@@ -165,7 +177,13 @@ export function createProfileUI(elements, toast) {
     const cleanedName = profileManager?.sanitizeName(profileData.displayName || '') || '';
     const missingName = !cleanedName || cleanedName.toLowerCase() === DEFAULT_GUEST_NAME.toLowerCase();
     const missingAvatar = !profileData.avatarPath && !profileManager?.getStoredAvatarPath();
-    if (missingName || missingAvatar) modal.classList.remove('hidden');
+    if (missingName || missingAvatar) {
+      if (modalManager) {
+        modalManager.openModal(modal);
+      } else {
+        modal.classList.remove('hidden');
+      }
+    }
   };
 
   const updateProfile = (profileData) => {
