@@ -2,171 +2,188 @@
 
 const { buildGameInstance } = require('../../core');
 
+const logger = console;
+
 const BOARD_SIZE = 8;
 const COLORS = ['red', 'black'];
 const SERIES_WINS_REQUIRED = 2;
 
 class MovePieceStrategy {
     execute({ state, playerManager, playerId, payload }) {
-        if (!playerManager.hasPlayer(playerId)) {
-            return { error: 'Player not part of this game.' };
-        }
-        if (state.isComplete) {
-            return { error: 'Series already complete.' };
-        }
-        if (state.isRoundComplete) {
-            return { error: 'Round already complete. Await reset.' };
-        }
-        const order = playerManager.list().map(p => p.id);
-        if (!order.includes(playerId)) {
-            return { error: 'Unknown player turn.' };
-        }
-        const turnId = state.currentPlayerId || state.turn || state.playerOrder?.[0] || order[0];
-        if (playerId !== turnId) {
-            return { error: 'Not your turn.' };
-        }
-
-        const color = state.players?.[playerId]?.color;
-        if (!color) {
-            return { error: 'Player color not assigned.' };
-        }
-
-        const mustContinue = state.mustContinue;
-        if (mustContinue && mustContinue.playerId !== playerId) {
-            return { error: 'Other player must complete capture.' };
-        }
-
-        const from = payload?.from;
-        const sequence = Array.isArray(payload?.sequence) && payload.sequence.length
-            ? payload.sequence
-            : (payload?.to ? [payload.to] : []);
-
-        if (!isValidCoordinate(from) || sequence.length === 0 || !sequence.every(isValidCoordinate)) {
-            return { error: 'Invalid move coordinates.' };
-        }
-        if (mustContinue && (from.row !== mustContinue.from.row || from.col !== mustContinue.from.col)) {
-            return { error: 'Must continue capture with the same piece.' };
-        }
-
-        const original = cloneState(state);
-        const board = cloneBoard(state.board);
-        let piece = board[from.row][from.col];
-        if (!piece) {
-            return { error: 'No piece at origin square.' };
-        }
-        if (!belongsToColor(piece, color)) {
-            return { error: 'Cannot move opponent piece.' };
-        }
-
-        board[from.row][from.col] = null;
-        let currentRow = from.row;
-        let currentCol = from.col;
-        let capturedAny = false;
-
-        for (const destination of sequence) {
-            const { row: destRow, col: destCol } = destination;
-            if (board[destRow][destCol]) {
-                return { error: 'Destination square occupied.' };
-            }
-            const rowDiff = destRow - currentRow;
-            const colDiff = destCol - currentCol;
-            if (Math.abs(rowDiff) !== Math.abs(colDiff)) {
-                return { error: 'Move must be diagonal.' };
-            }
-            const step = Math.abs(rowDiff);
-            if (step === 1) {
-                if (mustContinue) {
-                    return { error: 'Must continue capturing.' };
-                }
-                if (capturedAny) {
-                    return { error: 'Cannot make simple move after capture in same command.' };
-                }
-                if (!isKing(piece)) {
-                    const forward = getForwardDirection(color);
-                    if (rowDiff !== forward) {
-                        return { error: 'Non-king pieces must move forward.' };
-                    }
-                }
-            } else if (step === 2) {
-                const jumpedRow = currentRow + rowDiff / 2;
-                const jumpedCol = currentCol + colDiff / 2;
-                const jumpedPiece = board[jumpedRow][jumpedCol];
-                if (!jumpedPiece || !isOpponentPiece(jumpedPiece, color)) {
-                    return { error: 'Jump must capture opponent piece.' };
-                }
-                board[jumpedRow][jumpedCol] = null;
-                capturedAny = true;
-                if (!isKing(piece)) {
-                    const forward = getForwardDirection(color);
-                    if (rowDiff !== forward * 2) {
-                        return { error: 'Non-king pieces must capture forward.' };
-                    }
-                }
-            } else {
-                return { error: 'Move distance invalid.' };
-            }
-            currentRow = destRow;
-            currentCol = destCol;
-        }
-
-        if (!capturedAny && !mustContinue && hasAnyCapture(state.board, color)) {
-            return { error: 'Capture available: must capture.' };
-        }
-
-        const promoted = shouldPromote(piece, color, currentRow);
-        if (promoted) {
-            piece = promote(piece);
-        }
-        board[currentRow][currentCol] = piece;
-
-        const next = cloneState(state);
-        next.board = board;
-        next.lastMove = {
+        const context = {
+            action: 'checkers.movePiece',
+            roomId: state?.roomId || null,
             playerId,
-            from,
-            path: sequence,
-            captured: capturedAny,
-            promoted,
         };
 
-        const opponentId = order.find(id => id !== playerId) || null;
-        let nextTurnId = opponentId;
-        let nextMustContinue = null;
-
-        if (capturedAny) {
-            const canContinue = canPieceCapture(board, currentRow, currentCol, piece, color);
-            if (canContinue) {
-                nextTurnId = playerId;
-                nextMustContinue = { playerId, from: { row: currentRow, col: currentCol } };
+        try {
+            if (!playerManager.hasPlayer(playerId)) {
+                return { error: 'Player not part of this game.' };
             }
+            if (state.isComplete) {
+                return { error: 'Series already complete.' };
+            }
+            if (state.isRoundComplete) {
+                return { error: 'Round already complete. Await reset.' };
+            }
+            const order = playerManager.list().map(p => p.id);
+            if (!order.includes(playerId)) {
+                return { error: 'Unknown player turn.' };
+            }
+            const turnId = state.currentPlayerId || state.turn || state.playerOrder?.[0] || order[0];
+            if (playerId !== turnId) {
+                return { error: 'Not your turn.' };
+            }
+
+            const color = state.players?.[playerId]?.color;
+            if (!color) {
+                return { error: 'Player color not assigned.' };
+            }
+
+            const mustContinue = state.mustContinue;
+            if (mustContinue && mustContinue.playerId !== playerId) {
+                return { error: 'Other player must complete capture.' };
+            }
+
+            const from = payload?.from;
+            const sequence = Array.isArray(payload?.sequence) && payload.sequence.length
+                ? payload.sequence
+                : (payload?.to ? [payload.to] : []);
+
+            if (!isValidCoordinate(from) || sequence.length === 0 || !sequence.every(isValidCoordinate)) {
+                return { error: 'Invalid move coordinates.' };
+            }
+            if (mustContinue && (from.row !== mustContinue.from.row || from.col !== mustContinue.from.col)) {
+                return { error: 'Must continue capture with the same piece.' };
+            }
+
+            const original = cloneState(state);
+            const board = cloneBoard(state.board);
+            let piece = board[from.row][from.col];
+            if (!piece) {
+                return { error: 'No piece at origin square.' };
+            }
+            if (!belongsToColor(piece, color)) {
+                return { error: 'Cannot move opponent piece.' };
+            }
+
+            board[from.row][from.col] = null;
+            let currentRow = from.row;
+            let currentCol = from.col;
+            let capturedAny = false;
+
+            for (const destination of sequence) {
+                const { row: destRow, col: destCol } = destination;
+                if (board[destRow][destCol]) {
+                    return { error: 'Destination square occupied.' };
+                }
+                const rowDiff = destRow - currentRow;
+                const colDiff = destCol - currentCol;
+                if (Math.abs(rowDiff) !== Math.abs(colDiff)) {
+                    return { error: 'Move must be diagonal.' };
+                }
+                const step = Math.abs(rowDiff);
+                if (step === 1) {
+                    if (mustContinue) {
+                        return { error: 'Must continue capturing.' };
+                    }
+                    if (capturedAny) {
+                        return { error: 'Cannot make simple move after capture in same command.' };
+                    }
+                    if (!isKing(piece)) {
+                        const forward = getForwardDirection(color);
+                        if (rowDiff !== forward) {
+                            return { error: 'Non-king pieces must move forward.' };
+                        }
+                    }
+                } else if (step === 2) {
+                    const jumpedRow = currentRow + rowDiff / 2;
+                    const jumpedCol = currentCol + colDiff / 2;
+                    const jumpedPiece = board[jumpedRow][jumpedCol];
+                    if (!jumpedPiece || !isOpponentPiece(jumpedPiece, color)) {
+                        return { error: 'Jump must capture opponent piece.' };
+                    }
+                    board[jumpedRow][jumpedCol] = null;
+                    capturedAny = true;
+                    if (!isKing(piece)) {
+                        const forward = getForwardDirection(color);
+                        if (rowDiff !== forward * 2) {
+                            return { error: 'Non-king pieces must capture forward.' };
+                        }
+                    }
+                } else {
+                    return { error: 'Move distance invalid.' };
+                }
+                currentRow = destRow;
+                currentCol = destCol;
+            }
+
+            if (!capturedAny && !mustContinue && hasAnyCapture(state.board, color)) {
+                return { error: 'Capture available: must capture.' };
+            }
+
+            const promoted = shouldPromote(piece, color, currentRow);
+            if (promoted) {
+                piece = promote(piece);
+            }
+            board[currentRow][currentCol] = piece;
+
+            const next = cloneState(state);
+            next.board = board;
+            next.lastMove = {
+                playerId,
+                from,
+                path: sequence,
+                captured: capturedAny,
+                promoted,
+            };
+
+            const opponentId = order.find(id => id !== playerId) || null;
+            let nextTurnId = opponentId;
+            let nextMustContinue = null;
+
+            if (capturedAny) {
+                const canContinue = canPieceCapture(board, currentRow, currentCol, piece, color);
+                if (canContinue) {
+                    nextTurnId = playerId;
+                    nextMustContinue = { playerId, from: { row: currentRow, col: currentCol } };
+                }
+            }
+
+            next.mustContinue = nextMustContinue;
+            next.currentPlayerId = nextTurnId;
+            next.turn = nextTurnId;
+            next.turnColor = nextTurnId ? next.players?.[nextTurnId]?.color || null : null;
+
+            const opponentColor = getOppositeColor(color);
+            const opponentPieces = countPieces(board, opponentColor);
+            const playerPieces = countPieces(board, color);
+            const opponentHasMoves = opponentPieces > 0 && hasAnyMoves(board, opponentColor);
+            const playerHasMoves = playerPieces > 0 && hasAnyMoves(board, color);
+
+            if (opponentPieces === 0 || !opponentHasMoves) {
+                concludeRound(next, { winnerId: playerId, winnerColor: color });
+            } else if (playerPieces === 0 || !playerHasMoves) {
+                concludeRound(next, { winnerId: opponentId, winnerColor: opponentColor });
+            }
+
+            return {
+                apply() {
+                    return next;
+                },
+                getUndo() {
+                    const previous = cloneState(original);
+                    return () => ({ state: previous });
+                },
+            };
+        } catch (error) {
+            logger.error?.('[Checkers] movePiece failed', {
+                error: error?.message,
+                stack: error?.stack,
+                context,
+            });
+            return { error: 'Move failed. Please try again.' };
         }
-
-        next.mustContinue = nextMustContinue;
-        next.currentPlayerId = nextTurnId;
-        next.turn = nextTurnId;
-        next.turnColor = nextTurnId ? next.players?.[nextTurnId]?.color || null : null;
-
-        const opponentColor = getOppositeColor(color);
-        const opponentPieces = countPieces(board, opponentColor);
-        const playerPieces = countPieces(board, color);
-        const opponentHasMoves = opponentPieces > 0 && hasAnyMoves(board, opponentColor);
-        const playerHasMoves = playerPieces > 0 && hasAnyMoves(board, color);
-
-        if (opponentPieces === 0 || !opponentHasMoves) {
-            concludeRound(next, { winnerId: playerId, winnerColor: color });
-        } else if (playerPieces === 0 || !playerHasMoves) {
-            concludeRound(next, { winnerId: opponentId, winnerColor: opponentColor });
-        }
-
-        return {
-            apply() {
-                return next;
-            },
-            getUndo() {
-                const previous = cloneState(original);
-                return () => ({ state: previous });
-            },
-        };
     }
 }
 
