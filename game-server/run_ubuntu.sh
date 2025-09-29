@@ -116,7 +116,21 @@ esac
 
 if [ "$has_start" = true ]; then
     log "[*] Starting via npm start..."
-    npm start
+    port_value=${PORT:-8081}
+    server_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    if [ -z "$server_ip" ]; then
+        server_ip="127.0.0.1"
+    fi
+
+    npm start &
+    server_pid=$!
+
+    trap 'kill "$server_pid" 2>/dev/null || true' INT TERM
+
+    log "[*] Listening on http://$server_ip:$port_value and http://localhost:$port_value"
+    log "[*] Press Ctrl+C to stop the server."
+
+    wait "$server_pid"
     exit $?
 fi
 

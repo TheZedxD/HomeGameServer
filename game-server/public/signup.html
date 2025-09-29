@@ -122,6 +122,14 @@
       margin: -4px 0 4px;
       color: #fda4af;
     }
+
+    .input-error {
+      display: block;
+      font-size: 0.85rem;
+      margin-top: 4px;
+      min-height: 1em;
+      color: #fca5a5;
+    }
   </style>
 </head>
 <body>
@@ -141,7 +149,12 @@
           autocomplete="username"
           maxlength="24"
           required
+          aria-label="Username"
+          aria-invalid="false"
+          aria-describedby="signup-username-error"
+          data-error-id="signup-username-error"
         />
+        <span id="signup-username-error" class="input-error" role="alert" hidden></span>
         <small class="help-text">Letters, numbers, hyphens, and underscores only.</small>
       </div>
       <div>
@@ -164,7 +177,12 @@
           autocomplete="new-password"
           minlength="6"
           required
+          aria-label="Password"
+          aria-invalid="false"
+          aria-describedby="signup-password-error"
+          data-error-id="signup-password-error"
         />
+        <span id="signup-password-error" class="input-error" role="alert" hidden></span>
       </div>
       <input type="hidden" name="_csrf" value="" />
       <div class="actions">
@@ -177,6 +195,41 @@
     (function () {
       const status = document.getElementById('form-status');
       const csrfField = document.querySelector('input[name="_csrf"]');
+      const form = document.querySelector('form');
+
+      if (form) {
+        const controls = form.querySelectorAll('[data-error-id]');
+        controls.forEach((input) => {
+          const errorId = input.getAttribute('data-error-id');
+          const errorEl = errorId ? document.getElementById(errorId) : null;
+          if (!errorEl) {
+            return;
+          }
+
+          const updateValidity = () => {
+            if (input.validity.valid) {
+              input.setAttribute('aria-invalid', 'false');
+              errorEl.textContent = '';
+              errorEl.hidden = true;
+              return;
+            }
+
+            input.setAttribute('aria-invalid', 'true');
+            errorEl.textContent = input.validationMessage || 'Please enter a valid value.';
+            errorEl.hidden = false;
+          };
+
+          ['blur', 'input', 'invalid'].forEach((eventName) => {
+            input.addEventListener(eventName, (event) => {
+              if (eventName === 'invalid') {
+                event.preventDefault();
+              }
+              updateValidity();
+            });
+          });
+        });
+      }
+
       if (!csrfField) {
         return;
       }
