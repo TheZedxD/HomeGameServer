@@ -7,6 +7,7 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const os = require('os');
 const session = require('express-session');
 const FileStore = require('session-file-store')(session);
 const { Server } = require('socket.io');
@@ -415,6 +416,33 @@ app.get('/api/csrf-token', (req, res) => {
     setCsrfCookie(res, doubleSubmitToken, { secure: COOKIE_SECURE });
 
     res.json({ token: legacyToken || doubleSubmitToken, doubleSubmitToken });
+});
+
+app.get('/api/network-info', (req, res) => {
+    const interfaces = os.networkInterfaces();
+    let ipAddress = '127.0.0.1';
+
+    for (const details of Object.values(interfaces)) {
+        if (!details) {
+            continue;
+        }
+
+        for (const iface of details) {
+            if (iface && iface.family === 'IPv4' && !iface.internal && iface.address) {
+                ipAddress = iface.address;
+                break;
+            }
+        }
+
+        if (ipAddress !== '127.0.0.1') {
+            break;
+        }
+    }
+
+    const envPort = Number.parseInt(process.env.PORT, 10);
+    const port = Number.isFinite(envPort) ? envPort : 8081;
+
+    res.json({ ip: ipAddress, port });
 });
 
 app.get('/', (req, res) => {
