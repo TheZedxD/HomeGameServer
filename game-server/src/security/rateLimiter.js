@@ -71,7 +71,13 @@ function createHttpRateLimiter({
     };
 }
 
-function createSocketRateLimiter({ windowMs, max, keyGenerator = (socket) => socket.handshake.address || socket.id, onLimit } = {}) {
+function createSocketRateLimiter({ windowMs, max, keyGenerator = (socket) => {
+    // Safely access nested properties with optional chaining
+    const address = socket?.handshake?.address
+        || socket?.request?.connection?.remoteAddress
+        || socket?.conn?.remoteAddress;
+    return address || socket?.id || 'unknown';
+}, onLimit } = {}) {
     const limiter = new SlidingWindowRateLimiter({ windowMs, max });
     return function socketRateLimiter(packet, next) {
         const socket = this; // eslint-disable-line no-invalid-this
