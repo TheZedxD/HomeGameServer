@@ -13,6 +13,9 @@ USAGE
 
 FULL_UPGRADE=false
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$script_dir"
+
 while (($#)); do
   case "$1" in
     --full-upgrade)
@@ -31,33 +34,76 @@ while (($#)); do
   esac
 done
 
-if ! command -v sudo >/dev/null 2>&1; then
-  echo "sudo required"; exit 1
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "[!] $1 required" >&2
+    exit 1
+  fi
+}
+
+require_command pacman
+
+if (( EUID != 0 )) && ! command -v sudo >/dev/null 2>&1; then
+  echo "[!] sudo required" >&2
+  exit 1
 fi
 
-if ! command -v pacman >/dev/null 2>&1; then
-  echo "pacman not found (Arch/CachyOS expected)"; exit 1
-fi
+run_as_invoking_user() {
+  if (( EUID == 0 )); then
+    if [[ -n "${SUDO_USER:-}" ]] && command -v sudo >/dev/null 2>&1; then
+      sudo -H -u "$SUDO_USER" -- "$@"
+    else
+      echo "[!] Running npm commands as root. Resulting files will be owned by root." >&2
+      "$@"
+    fi
+  else
+    "$@"
+  fi
+}
 
 if [ "$FULL_UPGRADE" = true ]; then
   echo "[*] Performing full system upgrade (sudo pacman -Syu)..."
-  sudo pacman -Syu
+  if (( EUID == 0 )); then
+    pacman -Syu
+  else
+    sudo pacman -Syu
+  fi
 else
   echo "[*] Skipping full system upgrade. Pass --full-upgrade to run sudo pacman -Syu."
 fi
 
 echo "[*] Installing Node.js and npm dependencies via pacman..."
-sudo pacman -S --noconfirm --needed nodejs npm
+if (( EUID == 0 )); then
+  pacman -S --noconfirm --needed nodejs npm
+else
+  sudo pacman -S --noconfirm --needed nodejs npm
+fi
 
-echo "[*] Installing Node deps via npm ci..."
+npm_install_cmd=(npm ci)
+npm_fallback_cmd=(npm install)
+
+if [ -d node_modules ]; then
+  if (( EUID == 0 )) && [[ -n "${SUDO_USER:-}" ]] && command -v sudo >/dev/null 2>&1; then
+    if ! sudo -H -u "$SUDO_USER" -- test -w node_modules; then
+      echo "[!] node_modules exists but is not writable by $SUDO_USER. Please fix permissions (e.g., using chown) before running this script." >&2
+      exit 1
+    fi
+  elif [ ! -w node_modules ]; then
+    echo "[!] node_modules exists but is not writable. Please fix permissions before running this script." >&2
+    exit 1
+  fi
+fi
+
 if [ ! -d node_modules ]; then
-  if ! npm ci; then
+  echo "[*] Installing Node deps via npm ci..."
+  if ! run_as_invoking_user "${npm_install_cmd[@]}"; then
     status=$?
     echo "[!] npm ci failed (exit code $status). Falling back to npm install..." >&2
-    npm install
+    run_as_invoking_user "${npm_fallback_cmd[@]}"
   fi
 else
-  echo "[*] node_modules exists; skipping npm ci"
+  echo "[*] node_modules exists; refreshing dependencies with npm install"
+  run_as_invoking_user "${npm_fallback_cmd[@]}"
 fi
 
 echo "[*] Done."
