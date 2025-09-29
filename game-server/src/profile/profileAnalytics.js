@@ -1,7 +1,6 @@
 "use strict";
 
-const { safeRequire } = require('../../lib/safeRequire');
-const RedisLib = safeRequire('ioredis');
+const { getSharedRedisPool } = require('../../lib/redisPool');
 
 class ProfileAnalytics {
     constructor(options = {}) {
@@ -9,26 +8,45 @@ class ProfileAnalytics {
         this.logger = options.logger || console;
         this.buffer = new Map();
         this.flushIntervalMs = options.flushIntervalMs || 10000;
-        this.redis = null;
+        this.redisPool = null;
+        this.redisMetrics = { enabled: false, circuitState: 'offline' };
+        this.redisState = {
+            status: 'disabled',
+            lastError: null,
+            lastChangedAt: Date.now(),
+            metrics: this.redisMetrics,
+        };
 
-        if (options.redisUrl && RedisLib) {
-            this.redis = new RedisLib(options.redisUrl, {
-                lazyConnect: true,
-                maxRetriesPerRequest: 1,
-                enableReadyCheck: true,
+        if (options.redisUrl) {
+            this.redisPool = getSharedRedisPool({
+                redisUrl: options.redisUrl,
+                logger: this.logger,
+                maxConnections: 10,
+                circuitBreakerThreshold: options.circuitBreakerThreshold || 5,
+                circuitBreakerResetMs: options.circuitBreakerResetMs || 30000,
             });
-            this.redis.on('error', (err) => {
-                if (this.logger?.warn) {
-                    this.logger.warn('Profile analytics Redis error:', err.message);
-                }
-            });
-            this.redis.connect().catch((error) => {
-                if (this.logger?.error) {
-                    this.logger.error('Failed to connect analytics Redis client:', error);
-                }
-            });
-        } else if (options.redisUrl && !RedisLib) {
-            this.logger.warn?.('Redis analytics disabled: ioredis not installed.');
+            if (this.redisPool?.getHealthMetrics) {
+                this.redisMetrics = this.redisPool.getHealthMetrics();
+            }
+            this.redisState = {
+                status: this.redisPool?.isAvailable?.() ? 'initializing' : 'unavailable',
+                lastError: null,
+                lastChangedAt: Date.now(),
+                metrics: this.redisMetrics,
+            };
+            if (this.redisPool?.on) {
+                this._redisMetricsListener = (metrics) => {
+                    this.redisMetrics = metrics;
+                    if (this.logger?.debug) {
+                        this.logger.debug('Profile analytics Redis metrics', metrics);
+                    }
+                };
+                this.redisPool.on('metrics', this._redisMetricsListener);
+            }
+            this._updateRedisState(this.redisState.status);
+        } else {
+            this.logger.warn?.('Profile analytics Redis URL not provided. Operating in buffered mode.');
+            this._updateRedisState('disabled');
         }
 
         this._startFlushTimer();
@@ -48,36 +66,35 @@ class ProfileAnalytics {
         }
         const payload = Array.from(this.buffer.entries());
         this.buffer.clear();
-        if (!this.redis) {
-            if (this.logger?.info) {
-                this.logger.info('Profile analytics (no Redis):', payload);
-            }
+        if (!this._canUseRedis()) {
+            this._updateRedisState('unavailable');
+            this.logger?.info?.('Profile analytics (no Redis):', payload);
             return;
         }
         try {
-            const pipeline = this.redis.pipeline();
-            for (const [key, count] of payload) {
-                pipeline.hincrby(this.redisKey, key, count);
-            }
-            await pipeline.exec();
+            await this.redisPool.run((client) => {
+                const pipeline = client.pipeline();
+                for (const [key, count] of payload) {
+                    pipeline.hincrby(this.redisKey, key, count);
+                }
+                return pipeline.exec();
+            });
+            this._updateRedisState('healthy');
         } catch (error) {
-            if (this.logger?.warn) {
-                this.logger.warn('Failed to flush profile analytics to Redis:', error.message);
-            }
+            const status = error?.message === 'REDIS_CIRCUIT_OPEN' ? 'unavailable' : 'degraded';
+            this._updateRedisState(status, error);
+            this.logger?.warn?.('Failed to flush profile analytics to Redis:', error.message);
         }
     }
 
     async shutdown() {
         clearInterval(this._timer);
         await this.flush();
-        if (this.redis) {
-            try {
-                await this.redis.quit();
-            } catch (error) {
-                if (this.logger?.warn) {
-                    this.logger.warn('Failed to shutdown analytics Redis client:', error.message);
-                }
-            }
+        if (this.redisPool && this._redisMetricsListener && this.redisPool.off) {
+            this.redisPool.off('metrics', this._redisMetricsListener);
+        }
+        if (this.redisPool?.releaseReference) {
+            await this.redisPool.releaseReference();
         }
     }
 
@@ -91,6 +108,31 @@ class ProfileAnalytics {
         }, this.flushIntervalMs);
         if (this._timer.unref) {
             this._timer.unref();
+        }
+    }
+
+    _canUseRedis() {
+        return Boolean(this.redisPool && this.redisPool.enabled !== false);
+    }
+
+    _updateRedisState(status, error) {
+        const metrics = this.redisPool?.getHealthMetrics?.() || this.redisMetrics;
+        const previousState = this.redisState?.status;
+        const hasChanged = previousState !== status;
+        const errorMessage = error ? error.message || String(error) : this.redisState?.lastError || null;
+        this.redisMetrics = metrics;
+        this.redisState = {
+            status,
+            lastError: errorMessage,
+            lastChangedAt: hasChanged ? Date.now() : this.redisState?.lastChangedAt || Date.now(),
+            metrics,
+        };
+        if (hasChanged || error) {
+            this.logger?.info?.('Profile analytics Redis health update', {
+                status,
+                error: errorMessage,
+                metrics,
+            });
         }
     }
 }
