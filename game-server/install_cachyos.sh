@@ -91,7 +91,16 @@ if [ -d node_modules ]; then
   fi
 fi
 
-echo "[*] Installing Node.js dependencies with npm install..."
-run_as_invoking_user npm install
+if [ -f package-lock.json ]; then
+  echo "[*] Installing Node.js dependencies with npm ci..."
+  if ! run_as_invoking_user npm ci; then
+    status=$?
+    echo "[!] npm ci failed (exit code $status). Retrying with npm install..." >&2
+    run_as_invoking_user npm install
+  fi
+else
+  echo "[*] Installing Node.js dependencies with npm install..."
+  run_as_invoking_user npm install
+fi
 
 echo "[*] Done."
