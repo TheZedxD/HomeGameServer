@@ -324,6 +324,12 @@ class CsrfTokenManager {
         }
     }
 
+    revoke(sessionId) {
+        if (sessionId) {
+            this.tokens.delete(sessionId);
+        }
+    }
+
     destroy() {
         clearInterval(this.cleanupInterval);
         this.tokens.clear();
@@ -821,9 +827,7 @@ app.post('/login', authLimiter, csrfMiddleware, async (req, res, next) => {
 
 app.post('/logout', csrfMiddleware, (req, res) => {
     const sessionId = req.sessionID;
-    if (sessionId) {
-        csrfTokens.delete(sessionId);
-    }
+    csrfTokenManager.revoke(sessionId);
 
     clearAuthCookies(res, { secure: COOKIE_SECURE });
 
@@ -1523,7 +1527,7 @@ async function establishSession(req, res, usernameKey, onSuccess) {
             }
 
             if (previousSessionId) {
-                csrfTokens.delete(previousSessionId);
+                csrfTokenManager.revoke(previousSessionId);
             }
 
             req.session.username = usernameKey;
