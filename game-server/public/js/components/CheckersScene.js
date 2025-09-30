@@ -154,7 +154,6 @@ export class CheckersScene {
     }
 
     if (this.gameState.turnColor !== this.myColor) {
-      // It’s not your turn if the current turn colour doesn’t match your colour.
       return;
     }
 
@@ -205,6 +204,7 @@ export class CheckersScene {
     }
 
     this.gameState = newGameState;
+
     if (!this.gameState?.board) {
       this.selectedPiece = null;
     } else if (this.selectedPiece) {
@@ -237,26 +237,48 @@ export class CheckersScene {
     this.announcementElement.textContent = message;
     this.announcementElement.classList.add('visible');
 
-    clearTimeout(this.announcementTimeout);
+    if (this.announcementTimeout) {
+      clearTimeout(this.announcementTimeout);
+    }
+
     this.announcementTimeout = setTimeout(() => {
-      this.announcementElement?.classList.remove('visible');
+      if (this.announcementElement && this.announcementElement.classList) {
+        this.announcementElement.classList.remove('visible');
+      }
+      this.announcementTimeout = null;
     }, 2500);
   }
 
   destroy() {
-    if (this.canvas) {
-      this.canvas.removeEventListener('click', this.handleBoardClick);
-    }
     if (this.announcementTimeout) {
       clearTimeout(this.announcementTimeout);
       this.announcementTimeout = null;
     }
-    if (this.rootElement?.parentNode) {
-      this.rootElement.parentNode.removeChild(this.rootElement);
+
+    if (this.canvas) {
+      this.canvas.removeEventListener('click', this.handleBoardClick);
     }
+
+    if (this.announcementElement?.parentNode) {
+      try {
+        this.announcementElement.parentNode.removeChild(this.announcementElement);
+      } catch (error) {
+        console.warn('Failed to remove announcement element:', error);
+      }
+    }
+
+    if (this.rootElement?.parentNode) {
+      try {
+        this.rootElement.parentNode.removeChild(this.rootElement);
+      } catch (error) {
+        console.warn('Failed to remove root element:', error);
+      }
+    }
+
     this.rootElement = null;
     this.canvas = null;
     this.ctx = null;
     this.selectedPiece = null;
+    this.announcementElement = null;
   }
 }

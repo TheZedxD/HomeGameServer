@@ -355,6 +355,26 @@
     transition: box-shadow var(--transition-snappy) ease;
   }
 
+  @media (max-width: 768px) {
+    .profile-corner {
+      position: relative;
+      top: auto;
+      right: auto;
+      margin: var(--space-3) auto;
+      z-index: var(--z-base);
+    }
+
+    .lobby-list {
+      margin-top: 0;
+    }
+  }
+
+  @media (max-width: 1024px) {
+    .profile-corner {
+      z-index: var(--z-dropdown);
+    }
+  }
+
   .profile-corner:hover {
     box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.25);
   }

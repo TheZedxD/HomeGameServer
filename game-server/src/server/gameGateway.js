@@ -17,6 +17,7 @@ class ModularGameServer extends EventEmitter {
         super();
         this.io = io;
         this.logger = logger;
+        this.roomListVersion = 0;
         this.registry = new GameRegistry();
         this.pluginManager = new PluginManager({ registry: this.registry, logger });
         this.factory = new GameFactory({ registry: this.registry });
@@ -43,33 +44,56 @@ class ModularGameServer extends EventEmitter {
         const updateMetrics = () => {
             this.resourceMonitor.update({
                 rooms: this.roomManager.rooms.size,
-                activeGames: Array.from(this.roomManager.rooms.values()).filter(room => room.gameInstance).length,
-                players: Array.from(this.roomManager.rooms.values()).reduce((sum, room) => sum + room.playerManager.players.size, 0),
+                activeGames: Array.from(this.roomManager.rooms.values()).filter((room) => room.gameInstance).length,
+                players: Array.from(this.roomManager.rooms.values()).reduce(
+                    (sum, room) => sum + room.playerManager.players.size,
+                    0,
+                ),
             });
             this.io.emit('serverMetrics', this.resourceMonitor.getSnapshot());
         };
 
         const emitRooms = () => {
-            this.io.emit('updateRoomList', this._serializeRooms());
+            this.roomListVersion++;
+            this.io.emit('updateRoomList', {
+                version: this.roomListVersion,
+                rooms: this._serializeRooms(),
+                timestamp: Date.now(),
+            });
             updateMetrics();
         };
 
         this.roomManager.on('roomCreated', () => emitRooms());
+
         this.roomManager.on('roomUpdated', ({ id }) => {
             const room = this.roomManager.getRoom(id);
             if (room) {
-                this.io.to(id).emit('roomStateUpdate', room.toJSON());
+                this.io.to(id).emit('roomStateUpdate', {
+                    ...room.toJSON(),
+                    timestamp: Date.now(),
+                });
             }
             emitRooms();
         });
+
         this.roomManager.on('roomRemoved', ({ roomId }) => {
-            this.io.to(roomId).emit('roomClosed');
-            emitRooms();
+            const reason = 'The host has closed the room';
+
+            this.io.to(roomId).emit('roomClosing', {
+                roomId,
+                reason,
+                secondsRemaining: 3,
+            });
+
+            setTimeout(() => {
+                this.io.to(roomId).emit('roomClosed', { roomId, reason });
+                emitRooms();
+            }, 3000);
         });
+
         this.roomManager.on('gameStarted', ({ roomId, state }) => {
             const room = this.roomManager.getRoom(roomId);
             if (room) {
-                // Build a player list that includes colours/markers from the game state
                 const pm = room.playerManager.list();
                 const enrichedPlayers = pm.map((p) => {
                     const info = (state.state.players || {})[p.id] || {};
@@ -89,6 +113,7 @@ class ModularGameServer extends EventEmitter {
             }
             updateMetrics();
         });
+
         this.roomManager.on('gameState', ({ roomId, state, version, context }) => {
             this.io.to(roomId).emit('gameStateUpdate', {
                 state,
@@ -96,6 +121,7 @@ class ModularGameServer extends EventEmitter {
                 context,
             });
         });
+
         this.roomManager.on('roundEnd', ({ roomId, ...event }) => {
             if (!roomId) {
                 return;
@@ -105,8 +131,14 @@ class ModularGameServer extends EventEmitter {
     }
 
     attachSocket(socket, { getPlayer, setPlayerRoom, clearPlayerRoom }) {
+        const startGameLocks = new Map();
+
         socket.emit('availableGames', this.registry.list().map(({ id, name, minPlayers, maxPlayers }) => ({ id, name, minPlayers, maxPlayers })));
-        socket.emit('updateRoomList', this._serializeRooms());
+        socket.emit('updateRoomList', {
+            version: this.roomListVersion,
+            rooms: this._serializeRooms(),
+            timestamp: Date.now(),
+        });
         socket.on('createGame', async (payload = {}) => {
             console.log('createGame received:', payload, 'from socket:', socket.id);
             try {
@@ -229,15 +261,28 @@ class ModularGameServer extends EventEmitter {
         socket.on('startGame', () => {
             const player = getPlayer();
             if (!player?.inRoom) return;
+
+            if (startGameLocks.get(player.inRoom)) {
+                socket.emit('error', 'Game is already starting');
+                return;
+            }
+
             const room = this.roomManager.getRoom(player.inRoom);
             if (!room || room.hostId !== socket.id) {
                 socket.emit('error', 'Only the host can start the game.');
                 return;
             }
+
+            startGameLocks.set(player.inRoom, true);
+
             try {
                 this.roomManager.startGame(player.inRoom);
             } catch (error) {
                 socket.emit('error', error.message);
+            } finally {
+                setTimeout(() => {
+                    startGameLocks.delete(player.inRoom);
+                }, 2000);
             }
         });
 

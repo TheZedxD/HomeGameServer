@@ -144,29 +144,49 @@ export function createProfileUI(elements, toast, modalManager) {
   const handleAvatarSelection = async (event) => {
     const file = event.target?.files?.[0];
     if (!file) return;
+
+    const currentAvatarSrc = profile.avatarPreview?.src || DEFAULT_AVATAR_PATH;
+
     if (file.size > 2 * 1024 * 1024) {
       toast.showToast('Avatar must be smaller than 2MB.', 'error');
       profile.avatarForm?.reset();
       return;
     }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (profile.avatarPreview) {
+        profile.avatarPreview.src = e.target.result;
+      }
+      if (profile.avatar) {
+        profile.avatar.src = e.target.result;
+      }
+    };
+    reader.readAsDataURL(file);
+
     const formData = new FormData();
     formData.append('avatar', file);
+
     try {
       const response = await profileManager.csrfFetch(
         '/api/profile/avatar',
         { method: 'POST', body: formData },
         { operationName: 'avatar upload', showUserError: false }
       );
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(errorText || 'Upload failed');
       }
+
       const data = await response.json();
       if (!data?.avatarPath) throw new Error('Upload did not return an avatar path.');
+
       setAvatar(data.avatarPath, { bustCache: true });
       profileManager.persistLocalAvatarPath(data.avatarPath);
       toast.showToast('Avatar updated successfully.', 'success');
       hideProfilePrompt(true);
+
       if (profileManager.profile) {
         profileManager.profile.avatarPath = data.avatarPath;
         profileManager.profile.isGuest = false;
@@ -176,6 +196,13 @@ export function createProfileUI(elements, toast, modalManager) {
       console.error('Avatar upload failed.', error);
       const message = ErrorHandler.handleFetchError(error, 'avatar upload');
       toast.showToast(message, 'error');
+
+      if (profile.avatarPreview) {
+        profile.avatarPreview.src = currentAvatarSrc;
+      }
+      if (profile.avatar) {
+        profile.avatar.src = currentAvatarSrc;
+      }
     } finally {
       profile.avatarForm?.reset();
     }
@@ -242,17 +269,28 @@ export function createProfileUI(elements, toast, modalManager) {
   const maybeShowProfilePrompt = (profileData) => {
     const modal = elements.modals.profilePrompt;
     if (!modal) return;
+
     const dismissed = getLocalStorageItem(PROFILE_PROMPT_DISMISSED_KEY) === 'true';
     if (dismissed || !profileData || profileData.isGuest) return;
+
+    const isInGame = document.getElementById('game-ui')?.classList.contains('hidden') === false;
+    if (isInGame) {
+      console.debug('Suppressing profile prompt during active game');
+      return;
+    }
+
     const cleanedName = profileManager?.sanitizeName(profileData.displayName || '') || '';
     const missingName = !cleanedName || cleanedName.toLowerCase() === DEFAULT_GUEST_NAME.toLowerCase();
     const missingAvatar = !profileData.avatarPath && !profileManager?.getStoredAvatarPath();
+
     if (missingName || missingAvatar) {
-      if (modalManager) {
-        modalManager.openModal(modal);
-      } else {
-        modal.classList.remove('hidden');
-      }
+      setTimeout(() => {
+        if (modalManager) {
+          modalManager.openModal(modal);
+        } else {
+          modal.classList.remove('hidden');
+        }
+      }, 500);
     }
   };
 

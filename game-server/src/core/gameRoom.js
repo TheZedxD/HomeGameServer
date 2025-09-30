@@ -20,17 +20,31 @@ class GameRoom extends EventEmitter {
     }
 
     attachGame(gameInstance) {
+        if (this.stateSynchronizer) {
+            this.stateSynchronizer.dispose();
+            this.stateSynchronizer = null;
+        }
+
         this.gameInstance = gameInstance;
         this.playerManager = gameInstance.playerManager;
         this.stateManager = gameInstance.stateManager;
-        this.stateSynchronizer = new StateSynchronizer({ stateManager: this.stateManager, roomId: this.id });
+
+        this.stateSynchronizer = new StateSynchronizer({
+            stateManager: this.stateManager,
+            roomId: this.id,
+        });
+
         this.emit('gameAttached', { roomId: this.id, gameInstance });
         return this.stateSynchronizer;
     }
 
     detachGame() {
         if (this.stateSynchronizer) {
-            this.stateSynchronizer.dispose();
+            try {
+                this.stateSynchronizer.dispose();
+            } catch (error) {
+                console.warn('Error disposing synchronizer:', error);
+            }
             this.stateSynchronizer = null;
         }
 
@@ -39,7 +53,11 @@ class GameRoom extends EventEmitter {
         }
 
         if (typeof this.gameInstance?.destroy === 'function') {
-            this.gameInstance.destroy();
+            try {
+                this.gameInstance.destroy();
+            } catch (error) {
+                console.warn('Error destroying game instance:', error);
+            }
         }
 
         if (this.stateManager?.removeAllListeners) {

@@ -33,6 +33,9 @@ export class GameManager {
     this.currentPlayers = null;
     this.myPlayerId = null;
     this.activeGameId = null;
+    this.roomListVersion = 0;
+    this.gameOverShown = false;
+    this.lastGameOverState = null;
 
     this.availableGames = this.normalizeAvailableGames([
       DEFAULT_GAME_METADATA.checkers,
@@ -64,8 +67,13 @@ export class GameManager {
       console.error('Socket connection error:', error);
       ErrorHandler.showUserError('Failed to connect to game server. Please refresh the page.');
     });
-    this.socket.on('updateRoomList', (openRooms) => {
-      this.uiManager.renderRoomList(openRooms);
+    this.socket.on('updateRoomList', (payload) => {
+      if (payload.version && payload.version <= this.roomListVersion) {
+        console.debug('Ignoring stale room list update');
+        return;
+      }
+      this.roomListVersion = payload.version || 0;
+      this.uiManager.renderRoomList(payload.rooms || payload);
     });
     this.socket.on('joinedMatchLobby', ({ room, yourId }) => {
       console.log('Joined match lobby:', room, 'My ID:', yourId);
@@ -126,18 +134,37 @@ export class GameManager {
     });
     this.socket.on('gameStateUpdate', (payload = {}) => {
       const nextState = this.normalizeGameState(payload);
+
       if (this.gameInstance && typeof this.gameInstance.updateGameState === 'function') {
         this.gameInstance.updateGameState(nextState);
       }
+
       if (nextState.score) {
-        this.uiManager.updateScoreboardDisplay(nextState.score, { players: this.currentPlayers, gameId: this.activeGameId });
+        this.uiManager.updateScoreboardDisplay(nextState.score, {
+          players: this.currentPlayers,
+          gameId: this.activeGameId
+        });
       }
-      this.uiManager.updateTurnIndicator(nextState, { players: this.currentPlayers, gameId: this.activeGameId });
+
+      this.uiManager.updateTurnIndicator(nextState, {
+        players: this.currentPlayers,
+        gameId: this.activeGameId
+      });
+
       if (nextState.gameOver || nextState.isComplete) {
-        const winnerLabel = this.getWinnerAnnouncement(nextState);
-        if (winnerLabel) {
-          this.uiManager.showGameOver(winnerLabel);
+        const stateKey = `${nextState.round}-${nextState.winner}-${nextState.winnerId}`;
+
+        if (stateKey !== this.lastGameOverState) {
+          this.lastGameOverState = stateKey;
+          const winnerLabel = this.getWinnerAnnouncement(nextState);
+          if (winnerLabel && !this.gameOverShown) {
+            this.gameOverShown = true;
+            this.uiManager.showGameOver(winnerLabel);
+          }
         }
+      } else {
+        this.gameOverShown = false;
+        this.lastGameOverState = null;
       }
     });
     this.socket.on('roundEnd', (event = {}) => {
@@ -174,6 +201,19 @@ export class GameManager {
       if (seriesWinnerId && seriesWinnerId === this.myPlayerId) {
         this.profileManager.loadProfile();
       }
+    });
+
+    this.socket.on('roomClosing', ({ reason, secondsRemaining }) => {
+      this.uiManager.showToast(
+        `${reason}. Returning to lobby in ${secondsRemaining}s...`,
+        'warning',
+        { duration: secondsRemaining * 1000 }
+      );
+    });
+
+    this.socket.on('roomClosed', () => {
+      this.leaveGame();
+      this.uiManager.showToast('Room has been closed', 'info');
     });
     this.socket.on('error', (message) => {
       if (typeof message === 'string' && message.includes('does not exist')) {
@@ -229,9 +269,13 @@ export class GameManager {
   }
 
   leaveGame() {
+    this.gameOverShown = false;
+    this.lastGameOverState = null;
+
     if (this.socket && this.socket.connected) {
       this.socket.emit('leaveGame');
     }
+
     this.destroyGameInstance();
     this.currentPlayers = null;
     this.activeGameId = null;
