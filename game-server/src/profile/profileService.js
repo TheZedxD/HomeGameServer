@@ -4,15 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { createProfileCache } = require('./profileCache');
 const { createProfileAnalytics } = require('./profileAnalytics');
-const lockfile = (() => {
-    try {
-        return require('proper-lockfile');
-    } catch (error) {
-        return {
-            lock: async () => async () => {},
-        };
-    }
-})();
+const lockfile = require('proper-lockfile');
 
 class ProfileService {
     constructor(options) {
@@ -24,6 +16,7 @@ class ProfileService {
         this.uploadDir = options.uploadDir;
         this.logger = options.logger || console;
         this.cacheTtlMs = options.cacheTtlMs || 5000;
+        this._writeQueue = Promise.resolve();
         this.cache = createProfileCache({
             ...(options.cacheOptions || {}),
             logger: this.logger,
@@ -36,8 +29,6 @@ class ProfileService {
         this._storeCache = { data: null, mtime: 0, expiresAt: 0 };
         this._displayNameIndex = new Map();
         this._watchHandler = null;
-        this._writeQueue = Promise.resolve();
-        this._writeLock = null;
     }
 
     initialize() {
@@ -87,20 +78,17 @@ class ProfileService {
     }
 
     async writeStore(store) {
-        const task = this._writeQueue.then(async () => {
+        return this._writeQueue = this._writeQueue.then(async () => {
             const normalized = { users: store?.users || {} };
             const tempFile = `${this.dataFile}.tmp.${Date.now()}`;
 
-            const release = await lockfile.lock(this.dataFile, {
-                stale: 10000,
-                retries: { retries: 3, minTimeout: 100 },
-            }).catch(() => null);
-
-            if (release) {
-                this._writeLock = release;
-            }
-
+            let release = null;
             try {
+                release = await lockfile.lock(this.dataFile, {
+                    stale: 10000,
+                    retries: { retries: 3, minTimeout: 100 }
+                }).catch(() => null);
+
                 await fs.promises.writeFile(tempFile, JSON.stringify(normalized, null, 2));
                 await fs.promises.rename(tempFile, this.dataFile);
 
@@ -113,18 +101,10 @@ class ProfileService {
                 this._rebuildDisplayNameIndex(normalized.users);
             } finally {
                 await fs.promises.unlink(tempFile).catch(() => {});
-                if (release) {
-                    await release();
-                }
-                this._writeLock = null;
+
+                if (release) await release();
             }
         });
-
-        this._writeQueue = task.catch((error) => {
-            this.logger.error?.('Failed to write profile store:', error);
-        });
-
-        return task;
     }
 
     getProfile(username) {
