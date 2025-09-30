@@ -41,6 +41,7 @@ const { parseCookies } = require('./lib/cookies');
 const { createProfileService } = require('./src/profile/profileService');
 const { processAvatar } = require('./src/profile/avatarProcessor');
 const { createSessionMaintenance } = require('./src/sessions/sessionMaintenance');
+const { validateSignup } = require('./src/middleware/validation');
 
 const app = express();
 const server = http.createServer(app);
@@ -390,34 +391,10 @@ const profileService = createProfileService({
 });
 profileService.initialize();
 
-async function handleProfileServiceShutdown(signal) {
-    try {
-        await profileService.shutdown();
-    } catch (error) {
-        console.error(
-            `Profile service shutdown error${signal ? ` (${signal})` : ''}:`,
-            error,
-        );
-    }
-}
-
 const guestSessionManager = new GuestSessionManager({
     filePath: path.join(DATA_DIR, 'guest-sessions.json'),
     secret: GUEST_SESSION_SECRET,
     ttl: GUEST_SESSION_TTL_MS,
-});
-
-process.on('exit', () => { guestSessionManager.stop(); sessionMaintenance.stop(); });
-process.on('SIGTERM', () => { guestSessionManager.stop(); sessionMaintenance.stop(); });
-process.on('SIGINT', () => { guestSessionManager.stop(); sessionMaintenance.stop(); });
-process.on('exit', () => {
-    handleProfileServiceShutdown('exit');
-});
-process.on('SIGTERM', async () => {
-    await handleProfileServiceShutdown('SIGTERM');
-});
-process.on('SIGINT', async () => {
-    await handleProfileServiceShutdown('SIGINT');
 });
 
 app.set('trust proxy', 1);
@@ -523,6 +500,38 @@ const sessionMaintenance = createSessionMaintenance({
     logger: console,
 });
 sessionMaintenance.start();
+
+async function gracefulShutdown(signal) {
+    console.log(`Received ${signal}, starting graceful shutdown...`);
+
+    server.close(async () => {
+        console.log('HTTP server closed');
+
+        try {
+            await Promise.all([
+                profileService.shutdown(),
+                guestSessionManager.stop(),
+                sessionMaintenance.stop(),
+                csrfTokenManager.destroy(),
+            ]);
+
+            console.log('All services shut down successfully');
+            process.exit(0);
+        } catch (error) {
+            console.error('Error during shutdown:', error);
+            process.exit(1);
+        }
+    });
+
+    // Force shutdown after 30 seconds
+    setTimeout(() => {
+        console.error('Forced shutdown after timeout');
+        process.exit(1);
+    }, 30000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 app.use((req, res, next) => {
     const guestToken = req.cookies?.[GUEST_COOKIE_NAME];
@@ -658,6 +667,25 @@ app.get('/api/csrf-token', (req, res) => {
     res.json({ token: legacyToken || doubleSubmitToken, doubleSubmitToken });
 });
 
+app.get('/health', (req, res) => {
+    const health = {
+        status: 'healthy',
+        timestamp: Date.now(),
+        uptime: process.uptime(),
+        services: {
+            redis: profileService.cache.redisState.status,
+            sessions: fs.existsSync(SESSION_STORE_DIR),
+            profiles: fs.existsSync(USER_DATA_FILE),
+        }
+    };
+
+    const isHealthy = Object.values(health.services).every(
+        (s) => s === 'healthy' || s === true || s === 'disabled'
+    );
+
+    res.status(isHealthy ? 200 : 503).json(health);
+});
+
 app.get('/api/network-info', (req, res) => {
     const interfaces = os.networkInterfaces();
     let ipAddress = '127.0.0.1';
@@ -707,7 +735,7 @@ app.get('/signup', (req, res) => {
     res.sendFile(path.join(__dirname, 'public/signup.html'));
 });
 
-app.post('/signup', authLimiter, csrfMiddleware, async (req, res, next) => {
+app.post('/signup', authLimiter, csrfMiddleware, validateSignup, async (req, res, next) => {
     const rawUsername = req.body.username || '';
     const rawDisplayName = req.body.displayName || rawUsername;
     const password = req.body.password || '';
