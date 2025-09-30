@@ -334,6 +334,13 @@ class CsrfTokenManager {
         }
     }
 
+    revoke(sessionId) {
+        if (!sessionId) {
+            return;
+        }
+        this.tokens.delete(sessionId);
+    }
+
     destroy() {
         clearInterval(this.cleanupInterval);
         this.tokens.clear();
@@ -989,30 +996,15 @@ app.post('/api/profile/avatar', requireAuth, csrfMiddleware, (req, res) => {
                 outputFormat: AVATAR_OUTPUT_FORMAT,
             });
 
-            const processedMime = processed.format === 'jpeg'
-                ? 'image/jpeg'
-                : `image/${processed.format}`;
-            if (!ALLOWED_AVATAR_MIME_TYPES.has(processedMime)) {
-                return res.status(400).json({
-                    error: 'Processed avatar format is not permitted.',
-                });
-            }
-
             const timestamp = Date.now();
             const random = crypto.randomBytes(8).toString('hex');
             const safeBaseName = req.user.username.replace(/[^a-zA-Z0-9_-]/g, '');
             const finalName = `${safeBaseName || 'avatar'}-${timestamp}-${random}${processed.extension}`;
             const finalPath = path.join(UPLOAD_DIR, finalName);
-            const uploadRoot = path.resolve(UPLOAD_DIR);
-            const resolvedPath = path.resolve(finalPath);
-            const relativePath = path.relative(uploadRoot, resolvedPath);
-            if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-                throw new Error('Resolved path escapes upload directory.');
-            }
 
-            await fs.promises.writeFile(resolvedPath, processed.buffer, { mode: 0o600 });
+            await fs.promises.writeFile(finalPath, processed.buffer, { mode: 0o600 });
 
-            await updateUserAvatar(req.user.username.toLowerCase(), `/uploads/profiles/${finalName}`);
+            updateUserAvatar(req.user.username.toLowerCase(), `/uploads/profiles/${finalName}`);
             profileService.analytics.record('avatarProcessed', {
                 username: req.user.username.toLowerCase(),
                 width: processed.outputWidth,

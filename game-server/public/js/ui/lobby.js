@@ -88,7 +88,29 @@ export function createLobbyUI(elements, toast, modalManager) {
     });
 
     matchLobby.readyButton?.addEventListener('click', () => onReady?.());
-    matchLobby.startGameButton?.addEventListener('click', () => onStartGame?.());
+
+    let startGamePending = false;
+    matchLobby.startGameButton?.addEventListener('click', () => {
+      if (startGamePending) {
+        console.debug('Start game already in progress');
+        return;
+      }
+
+      startGamePending = true;
+      matchLobby.startGameButton.disabled = true;
+      const originalText = matchLobby.startGameButton.textContent;
+      matchLobby.startGameButton.textContent = 'Starting...';
+
+      onStartGame?.();
+
+      setTimeout(() => {
+        startGamePending = false;
+        if (matchLobby.startGameButton) {
+          matchLobby.startGameButton.disabled = false;
+          matchLobby.startGameButton.textContent = originalText;
+        }
+      }, 3000);
+    });
 
     lobby.joinOnlineButton?.addEventListener('click', () => {
       const rawCode = lobby.onlineRoomCodeInput?.value ?? '';
@@ -111,16 +133,23 @@ export function createLobbyUI(elements, toast, modalManager) {
   }
 
   function updateMatchLobby(room, myPlayerId, derivePlayerLabel) {
+    if (!room || !room.players) {
+      console.error('Invalid room data received');
+      return;
+    }
+
     matchLobby.title.textContent = `${room.gameType} Lobby`;
     const playerIds = Object.keys(room.players);
 
-    const player1 = room.players[playerIds[0]];
-    matchLobby.player1Card.classList.add('filled');
-    const p1Name = derivePlayerLabel(player1, 'Player 1');
-    const p1HostSuffix = playerIds[0] === room.hostId ? ' (Host)' : '';
-    matchLobby.player1Card.querySelector('.player-name').textContent = `${p1Name}${p1HostSuffix}`;
-    matchLobby.player1Status.textContent = player1.isReady ? 'Ready' : 'Not Ready';
-    matchLobby.player1Status.className = `status ${player1.isReady ? 'ready' : 'not-ready'}`;
+    if (playerIds.length > 0) {
+      const player1 = room.players[playerIds[0]];
+      matchLobby.player1Card.classList.add('filled');
+      const p1Name = derivePlayerLabel(player1, 'Player 1');
+      const p1HostSuffix = playerIds[0] === room.hostId ? ' (Host)' : '';
+      matchLobby.player1Card.querySelector('.player-name').textContent = `${p1Name}${p1HostSuffix}`;
+      matchLobby.player1Status.textContent = player1?.isReady ? 'Ready' : 'Not Ready';
+      matchLobby.player1Status.className = `status ${player1?.isReady ? 'ready' : 'not-ready'}`;
+    }
 
     if (playerIds.length > 1) {
       const player2 = room.players[playerIds[1]];
@@ -128,8 +157,8 @@ export function createLobbyUI(elements, toast, modalManager) {
       const p2Name = derivePlayerLabel(player2, 'Player 2');
       const p2HostSuffix = playerIds[1] === room.hostId ? ' (Host)' : '';
       matchLobby.player2Card.querySelector('.player-name').textContent = `${p2Name}${p2HostSuffix}`;
-      matchLobby.player2Status.textContent = player2.isReady ? 'Ready' : 'Not Ready';
-      matchLobby.player2Status.className = `status ${player2.isReady ? 'ready' : 'not-ready'}`;
+      matchLobby.player2Status.textContent = player2?.isReady ? 'Ready' : 'Not Ready';
+      matchLobby.player2Status.className = `status ${player2?.isReady ? 'ready' : 'not-ready'}`;
     } else {
       matchLobby.player2Card.classList.remove('filled');
       matchLobby.player2Card.querySelector('.player-name').textContent = 'Waiting for Player...';
@@ -138,11 +167,16 @@ export function createLobbyUI(elements, toast, modalManager) {
     }
 
     const myPlayer = room.players[myPlayerId];
+
     if (!myPlayer) {
-      console.warn('Unable to locate current player in room state update.');
+      console.warn('Local player not found in room state');
+      matchLobby.readyButton.disabled = true;
+      matchLobby.readyButton.textContent = 'Not in Room';
+      matchLobby.startGameButton.classList.add('hidden');
       return;
     }
 
+    matchLobby.readyButton.disabled = false;
     if (myPlayer.isReady) {
       matchLobby.readyButton.textContent = 'Unready';
       matchLobby.readyButton.classList.remove('btn-warning');
@@ -155,7 +189,7 @@ export function createLobbyUI(elements, toast, modalManager) {
 
     if (myPlayerId === room.hostId) {
       matchLobby.startGameButton.classList.remove('hidden');
-      const allReady = Object.values(room.players).every((player) => player.isReady);
+      const allReady = Object.values(room.players).every((player) => player?.isReady);
       const roomFull = Object.keys(room.players).length === room.maxPlayers;
       matchLobby.startGameButton.disabled = !(allReady && roomFull);
     } else {

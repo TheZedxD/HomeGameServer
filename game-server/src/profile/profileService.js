@@ -4,7 +4,13 @@ const fs = require('fs');
 const path = require('path');
 const { createProfileCache } = require('./profileCache');
 const { createProfileAnalytics } = require('./profileAnalytics');
-const lockfile = require('proper-lockfile');
+const lockfile = (() => {
+    try {
+        return require('proper-lockfile');
+    } catch (error) {
+        return require('../utils/lockfileFallback');
+    }
+})();
 
 class ProfileService {
     constructor(options) {
