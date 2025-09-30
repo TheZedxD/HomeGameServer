@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 const { containsProfanity } = require('./profanityFilter');
 
 const COMMON_PASSWORDS = new Set([
@@ -17,7 +20,78 @@ const COMMON_PASSWORDS = new Set([
 
 const PASSWORD_RATE_LIMIT_MAX_ATTEMPTS = 5;
 const PASSWORD_RATE_LIMIT_WINDOW_MS = 60_000;
-const passwordValidationAttempts = new Map();
+
+class PasswordRateLimiter {
+    constructor() {
+        this.attempts = new Map();
+        this.persistPath = path.join(__dirname, '../../data/password-attempts.json');
+        this.saveInterval = setInterval(() => this.persist(), 60_000);
+        this.saveInterval.unref?.();
+        this.load();
+    }
+
+    load() {
+        try {
+            if (fs.existsSync(this.persistPath)) {
+                const data = JSON.parse(fs.readFileSync(this.persistPath, 'utf8'));
+                this.attempts = new Map(Object.entries(data));
+            }
+        } catch (error) {
+            console.warn('Failed to load password rate limit data:', error);
+        }
+    }
+
+    persist() {
+        try {
+            const now = Date.now();
+            const data = {};
+            for (const [key, bucket] of this.attempts.entries()) {
+                if (bucket && typeof bucket.windowStart === 'number' && typeof bucket.attempts === 'number') {
+                    if (now - bucket.windowStart < PASSWORD_RATE_LIMIT_WINDOW_MS * 2) {
+                        data[key] = bucket;
+                    }
+                }
+            }
+            fs.mkdirSync(path.dirname(this.persistPath), { recursive: true });
+            fs.writeFileSync(this.persistPath, JSON.stringify(data));
+        } catch (error) {
+            console.warn('Failed to persist password rate limit data:', error);
+        }
+    }
+
+    getBucket(key) {
+        const now = Date.now();
+        const bucket = this.attempts.get(key);
+
+        if (!bucket || now - bucket.windowStart > PASSWORD_RATE_LIMIT_WINDOW_MS) {
+            const freshBucket = { windowStart: now, attempts: 0 };
+            this.attempts.set(key, freshBucket);
+            return freshBucket;
+        }
+
+        return bucket;
+    }
+
+    isRateLimited(key) {
+        const bucket = this.getBucket(key);
+        if (bucket.attempts >= PASSWORD_RATE_LIMIT_MAX_ATTEMPTS) {
+            return true;
+        }
+        bucket.attempts += 1;
+        return false;
+    }
+
+    cleanup() {
+        clearInterval(this.saveInterval);
+        this.persist();
+    }
+}
+
+const passwordLimiter = new PasswordRateLimiter();
+
+process.on('exit', () => passwordLimiter.cleanup());
+process.on('SIGTERM', () => passwordLimiter.cleanup());
+process.on('SIGINT', () => passwordLimiter.cleanup());
 
 const ACCOUNT_NAME_REGEX = /^[a-zA-Z0-9_-]{3,24}$/;
 const DISPLAY_NAME_REGEX = /^[\p{L}\p{N} _'’.-]{1,24}$/u;
@@ -84,26 +158,8 @@ function sanitizeAccountName(name) {
     return trimmed;
 }
 
-function getPasswordRateLimitBucket(key) {
-    const now = Date.now();
-    const bucket = passwordValidationAttempts.get(key);
-
-    if (!bucket || now - bucket.windowStart > PASSWORD_RATE_LIMIT_WINDOW_MS) {
-        const freshBucket = { windowStart: now, attempts: 0 };
-        passwordValidationAttempts.set(key, freshBucket);
-        return freshBucket;
-    }
-
-    return bucket;
-}
-
 function isRateLimitedForPassword(key) {
-    const bucket = getPasswordRateLimitBucket(key);
-    if (bucket.attempts >= PASSWORD_RATE_LIMIT_MAX_ATTEMPTS) {
-        return true;
-    }
-    bucket.attempts += 1;
-    return false;
+    return passwordLimiter.isRateLimited(key);
 }
 
 function calculateShannonEntropy(value) {
