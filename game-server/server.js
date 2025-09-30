@@ -915,9 +915,21 @@ const avatarUpload = multer({
         fields: 2,
     },
     fileFilter: (req, file, cb) => {
-        if (!ALLOWED_AVATAR_MIME_TYPES.has(file.mimetype)) {
+        // Sanitize original filename immediately
+        const sanitized = file.originalname
+            .normalize('NFKC')
+            .replace(/[^a-zA-Z0-9._-]/g, '')
+            .slice(0, 100);
+
+        if (!sanitized || sanitized.startsWith('.')) {
+            return cb(new Error('Invalid filename'));
+        }
+
+        const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        if (!allowedMimes.includes(file.mimetype)) {
             return cb(new Error('Invalid file type'));
         }
+
         cb(null, true);
     }
 }).single('avatar');
