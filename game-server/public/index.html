@@ -59,21 +59,9 @@
 
                     <p id="name-greeting" class="name-greeting">Welcome, <span id="player-name-preview">Guest</span>!</p>
 
-                    <label for="displayNameInput" class="sr-only">Quick display name</label>
-                    <div class="name-row">
-                        <input id="displayNameInput" class="input-field" placeholder="Your display name" maxlength="24" autocomplete="name">
-                        <button id="saveDisplayNameBtn" class="btn" type="button">Save Name</button>
-                    </div>
-
-                    <div class="window-section classic-raised" aria-labelledby="identity-title">
-                        <h2 id="identity-title">Identity</h2>
-                        <p>Choose the name that will appear in match lobbies and scoreboards.</p>
-                        <label for="player-name-input" class="sr-only">Display name</label>
-                        <div class="name-input-row">
-                            <input type="text" id="player-name-input" class="input-field" placeholder="Enter your display name..." maxlength="24" autocomplete="name">
-                            <button id="save-name-btn" class="btn" type="button">Save Name</button>
-                        </div>
-                        <p id="name-status" class="name-status hidden" role="status"></p>
+                    <div class="identity-cta" aria-live="polite">
+                        <p class="identity-cta__description">Keep your profile tidy by managing your display name from a dedicated window.</p>
+                        <button id="open-identity-overlay-btn" class="btn btn-secondary" type="button">Edit Display Name</button>
                     </div>
 
                     <div class="window-section classic-raised" aria-labelledby="p2p-title">
@@ -192,6 +180,27 @@
                 <div id="game-selection-list" class="selection-list"></div>
                 <div class="modal-actions">
                     <button id="close-modal-btn" class="btn" type="button">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="identity-overlay" class="modal-overlay hidden identity-overlay" role="dialog" aria-modal="true" aria-labelledby="identity-overlay-title" tabindex="-1">
+        <div class="modal-content classic-raised identity-modal">
+            <div class="title-bar">
+                <span class="title-bar-text" id="identity-overlay-title">Player Identity</span>
+                <div class="title-bar-controls">
+                    <button type="button" class="title-bar-btn" id="close-identity-overlay-btn" aria-label="Close identity window">×</button>
+                </div>
+            </div>
+            <div class="modal-body identity-modal__body">
+                <p>Choose the name that will appear in match lobbies and scoreboards.</p>
+                <label for="identity-display-name" class="sr-only">Display name</label>
+                <input type="text" id="identity-display-name" class="input-field" placeholder="Enter your display name..." maxlength="24" autocomplete="name">
+                <p id="identity-status" class="name-status hidden" role="status"></p>
+                <div class="modal-actions identity-modal__actions">
+                    <button id="identity-save-btn" class="btn btn-primary" type="button">Save Name</button>
+                    <button id="identity-cancel-btn" class="btn" type="button">Cancel</button>
                 </div>
             </div>
         </div>

@@ -156,9 +156,29 @@ export class CheckersScene {
       (this.myColor === 'black' && BLACK_PIECES.has(pieceAtClick));
 
     if (this.selectedPiece) {
-      const from = { x: this.selectedPiece.x, y: this.selectedPiece.y };
-      const to = { x: gridX, y: gridY };
-      this.socket?.emit('movePiece', { from, to });
+      if (this.selectedPiece.x === gridX && this.selectedPiece.y === gridY) {
+        this.selectedPiece = null;
+        this.render();
+        return;
+      }
+
+      const from = {
+        row: this.selectedPiece.y,
+        col: this.selectedPiece.x,
+      };
+      const destination = {
+        row: gridY,
+        col: gridX,
+      };
+
+      this.socket?.emit('submitMove', {
+        type: 'movePiece',
+        payload: {
+          from,
+          to: destination,
+          sequence: [destination],
+        },
+      });
       this.selectedPiece = null;
       this.render();
       return;
