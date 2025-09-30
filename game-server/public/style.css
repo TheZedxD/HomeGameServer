@@ -320,6 +320,21 @@
     margin: 0;
   }
 
+  .identity-cta {
+    display: grid;
+    gap: var(--space-3);
+    align-items: start;
+    background: var(--surface-elevated);
+    border: 2px inset var(--win2k-control-face);
+    padding: var(--space-4);
+    border-radius: var(--radius-sm);
+  }
+
+  .identity-cta__description {
+    margin: 0;
+    color: var(--win2k-muted);
+  }
+
   .profile-corner {
     position: fixed;
     top: 72px;
@@ -717,6 +732,13 @@
     contain: layout paint;
   }
 
+  .identity-overlay {
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: var(--space-6);
+    background: rgba(0, 0, 0, 0.3);
+  }
+
   .modal-overlay.prompt-modal {
     background: rgba(0, 0, 0, 0.55);
   }
@@ -730,6 +752,19 @@
   .modal-body {
     padding: var(--space-4);
     display: grid;
+    gap: var(--space-3);
+  }
+
+  .identity-modal {
+    max-width: 420px;
+  }
+
+  .identity-modal__body {
+    gap: var(--space-3);
+  }
+
+  .identity-modal__actions {
+    justify-content: flex-end;
     gap: var(--space-3);
   }
 

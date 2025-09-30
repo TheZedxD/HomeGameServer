@@ -8,7 +8,8 @@ export function cacheElements() {
     modals: {
       createGame: document.getElementById('create-game-modal'),
       gameOver: document.getElementById('game-over-message'),
-      profilePrompt: document.getElementById('profile-prompt-modal')
+      profilePrompt: document.getElementById('profile-prompt-modal'),
+      identityEditor: document.getElementById('identity-overlay')
     },
     lobby: {
       roomList: document.getElementById('room-list'),
@@ -29,12 +30,14 @@ export function cacheElements() {
       startGameButton: document.getElementById('start-game-btn')
     },
     identity: {
-      quickInput: document.getElementById('displayNameInput'),
-      quickSaveButton: document.getElementById('saveDisplayNameBtn'),
-      input: document.getElementById('player-name-input'),
-      saveButton: document.getElementById('save-name-btn'),
+      overlay: document.getElementById('identity-overlay'),
+      openButton: document.getElementById('open-identity-overlay-btn'),
+      closeButton: document.getElementById('close-identity-overlay-btn'),
+      cancelButton: document.getElementById('identity-cancel-btn'),
+      input: document.getElementById('identity-display-name'),
+      saveButton: document.getElementById('identity-save-btn'),
       preview: document.getElementById('player-name-preview'),
-      status: document.getElementById('name-status')
+      status: document.getElementById('identity-status')
     },
     profile: {
       corner: document.getElementById('profile-corner'),

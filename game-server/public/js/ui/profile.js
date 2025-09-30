@@ -40,7 +40,41 @@ export function createProfileUI(elements, toast, modalManager) {
     identity.status.classList.remove('success', 'error');
   };
 
-  const handleDisplayNameChange = async (rawValue, { showStatus = false } = {}) => {
+  const identityModal = elements.modals?.identityEditor;
+
+  const openIdentityEditor = ({ trigger } = {}) => {
+    clearNameStatus();
+    if (modalManager && identityModal) {
+      modalManager.openModal(identityModal, trigger || identity.openButton || document.activeElement);
+    } else {
+      identityModal?.classList.remove('hidden');
+      identityModal?.setAttribute('aria-hidden', 'false');
+      if (trigger instanceof HTMLElement) {
+        identityModal?.setAttribute('data-trigger-id', trigger.id || '');
+      }
+    }
+    if (identity.input) {
+      identity.input.focus();
+      identity.input.select();
+    }
+  };
+
+  const closeIdentityEditor = ({ restoreFocus = true } = {}) => {
+    if (modalManager && identityModal) {
+      modalManager.closeModal(identityModal, { returnFocus: restoreFocus });
+    } else if (identityModal) {
+      identityModal.classList.add('hidden');
+      identityModal.setAttribute('aria-hidden', 'true');
+      if (restoreFocus) {
+        const triggerId = identityModal.getAttribute('data-trigger-id');
+        const trigger = (triggerId && document.getElementById(triggerId)) || identity.openButton;
+        trigger?.focus?.();
+        identityModal.removeAttribute('data-trigger-id');
+      }
+    }
+  };
+
+  const handleDisplayNameChange = async (rawValue, { showStatus = false, closeOnSuccess = false } = {}) => {
     if (!profileManager) return false;
     const result = await profileManager.updateDisplayName(rawValue);
     if (!result.success) {
@@ -51,6 +85,9 @@ export function createProfileUI(elements, toast, modalManager) {
     if (showStatus) showNameStatus('Name saved!', 'success');
     else if (!result.warning) toast.showToast('Display name updated.', 'success');
     if (result.warning) toast.showToast(result.warning, 'warning', { duration: 6000 });
+    if (closeOnSuccess) {
+      closeIdentityEditor({ restoreFocus: true });
+    }
     return true;
   };
 
@@ -60,25 +97,25 @@ export function createProfileUI(elements, toast, modalManager) {
     if (storedName) {
       updateNamePreview(storedName);
       if (identity.input) identity.input.value = storedName;
-      if (identity.quickInput) identity.quickInput.value = storedName;
     } else {
       updateNamePreview(DEFAULT_GUEST_NAME);
     }
-    identity.saveButton?.addEventListener('click', () => handleDisplayNameChange(identity.input?.value ?? '', { showStatus: true }));
+    identity.openButton?.addEventListener('click', () => openIdentityEditor({ trigger: identity.openButton }));
+    identity.closeButton?.addEventListener('click', () => closeIdentityEditor());
+    identity.cancelButton?.addEventListener('click', () => closeIdentityEditor());
+    identity.saveButton?.addEventListener('click', () =>
+      handleDisplayNameChange(identity.input?.value ?? '', { showStatus: true })
+    );
     identity.input?.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
         handleDisplayNameChange(identity.input.value, { showStatus: true });
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        closeIdentityEditor({ restoreFocus: true });
       }
     });
     identity.input?.addEventListener('input', clearNameStatus);
-    identity.quickSaveButton?.addEventListener('click', () => handleDisplayNameChange(identity.quickInput?.value ?? '', { showStatus: false }));
-    identity.quickInput?.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        handleDisplayNameChange(identity.quickInput.value, { showStatus: false });
-      }
-    });
   };
 
   const handleAvatarSelection = async (event) => {
@@ -151,12 +188,12 @@ export function createProfileUI(elements, toast, modalManager) {
     });
     profile.changeAvatarButton?.addEventListener('click', () => profile.avatarInput?.click());
     profile.avatarInput?.addEventListener('change', handleAvatarSelection);
-    const focusIdentity = () => {
+    const focusIdentity = (trigger) => {
       hideProfilePrompt(false, { restoreFocus: false });
-      identity.input?.focus();
+      openIdentityEditor({ trigger });
     };
-    profile.viewProfileButton?.addEventListener('click', focusIdentity);
-    prompt.editButton?.addEventListener('click', focusIdentity);
+    profile.viewProfileButton?.addEventListener('click', () => focusIdentity(profile.viewProfileButton));
+    prompt.editButton?.addEventListener('click', () => focusIdentity(prompt.editButton));
     prompt.dismissButton?.addEventListener('click', () => hideProfilePrompt(true));
     elements.game.exitButton?.addEventListener('click', () => onLeaveGame?.());
     elements.game.gameOverExitButton?.addEventListener('click', () => {
@@ -197,7 +234,6 @@ export function createProfileUI(elements, toast, modalManager) {
     setAvatar(avatarPath);
     if (!active?.isGuest && active?.avatarPath) profileManager?.persistLocalAvatarPath(active.avatarPath);
     if (identity.input) identity.input.value = active?.displayName || '';
-    if (identity.quickInput) identity.quickInput.value = active?.displayName || '';
     updateNamePreview(active?.displayName);
   };
 
