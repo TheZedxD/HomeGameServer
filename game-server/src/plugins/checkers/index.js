@@ -118,8 +118,11 @@ class MovePieceStrategy {
                 currentCol = destCol;
             }
 
-            if (!capturedAny && !mustContinue && hasAnyCapture(state.board, color)) {
-                return { error: 'Capture available: must capture.' };
+            if (!capturedAny && !mustContinue) {
+                const playerHasAnyCapture = hasAnyPlayerCapture(state.board, color);
+                if (playerHasAnyCapture) {
+                    return { error: 'Capture available: must capture.' };
+                }
             }
 
             const promoted = shouldPromote(piece, color, currentRow);
@@ -432,7 +435,7 @@ function canPieceMove(board, row, col, piece, color) {
     return false;
 }
 
-function hasAnyCapture(board, color) {
+function hasAnyPlayerCapture(board, color) {
     for (let row = 0; row < BOARD_SIZE; row += 1) {
         for (let col = 0; col < BOARD_SIZE; col += 1) {
             const piece = board[row][col];
@@ -442,6 +445,10 @@ function hasAnyCapture(board, color) {
         }
     }
     return false;
+}
+
+function hasAnyCapture(board, color) {
+    return hasAnyPlayerCapture(board, color);
 }
 
 function hasAnyMoves(board, color) {
