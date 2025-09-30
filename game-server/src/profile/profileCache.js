@@ -117,24 +117,26 @@ class ProfileCache {
             return cached;
         }
         if (!this._canUseRedis()) {
-            this._updateRedisState('unavailable');
             return null;
         }
+
         try {
             const raw = await this.redisPool.run((client) => client.get(this.prefix + key));
-            if (!raw) {
+
+            // Update state AFTER successful operation
+            if (this.redisState.status !== 'healthy') {
                 this._updateRedisState('healthy');
-                return null;
             }
+
+            if (!raw) return null;
+
             const payload = JSON.parse(raw);
             this._setMemory(key, payload, this.ttlMs);
-            this._updateRedisState('healthy');
             return payload;
         } catch (error) {
             this.metrics.redisErrors += 1;
             const status = error?.message === 'REDIS_CIRCUIT_OPEN' ? 'unavailable' : 'degraded';
             this._updateRedisState(status, error);
-            this.logger?.warn?.('Profile cache get failed:', error.message);
             return null;
         }
     }
@@ -244,20 +246,27 @@ class ProfileCache {
         const metrics = this.redisPool?.getHealthMetrics?.() || this.redisMetrics;
         const previousState = this.redisState?.status;
         const hasChanged = previousState !== status;
-        const errorMessage = error ? error.message || String(error) : this.redisState?.lastError || null;
+        const errorMessage = error ? error.message || String(error) : null;
+
+        // Always update metrics first
         this.redisMetrics = metrics;
-        this.redisState = {
+
+        const newState = {
             status,
-            lastError: errorMessage,
+            lastError: errorMessage || this.redisState?.lastError || null,
             lastChangedAt: hasChanged ? this._now() : this.redisState?.lastChangedAt || this._now(),
             metrics,
         };
+
+        // Use atomic update
+        this.redisState = newState;
+
         if (hasChanged || error) {
-            this.logger?.info?.('Profile cache Redis health update', {
-                status,
-                error: errorMessage,
-                metrics,
-            });
+            // Debounce logging
+            clearTimeout(this._stateLogTimeout);
+            this._stateLogTimeout = setTimeout(() => {
+                this.logger?.info?.('Profile cache Redis health update', newState);
+            }, 100);
         }
     }
 }
