@@ -187,6 +187,16 @@ function resolveSecret(secretName) {
     return { ok: true, value: generated };
 }
 
+process.on('exit', () => {
+    csrfTokenManager.destroy();
+});
+process.on('SIGTERM', () => {
+    csrfTokenManager.destroy();
+});
+process.on('SIGINT', () => {
+    csrfTokenManager.destroy();
+});
+
 function loadSecrets() {
     const secrets = {};
     const failures = [];
@@ -321,12 +331,6 @@ class CsrfTokenManager {
             if (now > entry.expiresAt) {
                 this.tokens.delete(sessionId);
             }
-        }
-    }
-
-    revoke(sessionId) {
-        if (sessionId) {
-            this.tokens.delete(sessionId);
         }
     }
 
