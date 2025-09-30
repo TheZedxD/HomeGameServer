@@ -99,6 +99,12 @@ export function createModalManager({ modals = {} } = {}) {
     activeModal = modal;
     modal.classList.remove('hidden');
     modal.setAttribute('aria-hidden', 'false');
+    modal.dispatchEvent(
+      new CustomEvent('modal:opened', {
+        bubbles: false,
+        detail: { trigger: state.trigger }
+      })
+    );
     focusFirstElement(modal);
   }
 
@@ -109,6 +115,12 @@ export function createModalManager({ modals = {} } = {}) {
     if (!state) return;
     modal.classList.add('hidden');
     modal.setAttribute('aria-hidden', 'true');
+    modal.dispatchEvent(
+      new CustomEvent('modal:closed', {
+        bubbles: false,
+        detail: { returnFocus }
+      })
+    );
     if (activeModal === modal) {
       activeModal = null;
     }
