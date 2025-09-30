@@ -287,17 +287,56 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
     .map((origin) => origin.trim())
     .filter(Boolean);
 
-const csrfTokens = new Map();
+class CsrfTokenManager {
+    constructor() {
+        this.tokens = new Map();
+        this.maxTokens = 10000;
+        this.cleanupInterval = setInterval(() => this.cleanup(), 300000); // 5 minutes
+        this.cleanupInterval.unref?.();
+    }
+
+    generate(sessionId) {
+        if (this.tokens.size >= this.maxTokens) {
+            this.cleanup();
+        }
+        const token = crypto.randomBytes(32).toString('hex');
+        this.tokens.set(sessionId, { token, expiresAt: Date.now() + 3600000 });
+        return token;
+    }
+
+    validate(sessionId, token) {
+        const entry = this.tokens.get(sessionId);
+        if (!entry) return false;
+        if (Date.now() > entry.expiresAt) {
+            this.tokens.delete(sessionId);
+            return false;
+        }
+        return entry.token === token;
+    }
+
+    cleanup() {
+        const now = Date.now();
+        for (const [sessionId, entry] of this.tokens.entries()) {
+            if (now > entry.expiresAt) {
+                this.tokens.delete(sessionId);
+            }
+        }
+    }
+
+    destroy() {
+        clearInterval(this.cleanupInterval);
+        this.tokens.clear();
+    }
+}
+
+const csrfTokenManager = new CsrfTokenManager();
 
 function generateLegacyCsrfToken(sessionId) {
-    const token = crypto.randomBytes(32).toString('hex');
-    csrfTokens.set(sessionId, token);
-    setTimeout(() => csrfTokens.delete(sessionId), 3600000); // 1 hour expiry
-    return token;
+    return csrfTokenManager.generate(sessionId);
 }
 
 function validateCSRFToken(sessionId, token) {
-    return csrfTokens.get(sessionId) === token;
+    return csrfTokenManager.validate(sessionId, token);
 }
 
 function tokensMatch(tokenA, tokenB) {
