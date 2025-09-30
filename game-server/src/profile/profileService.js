@@ -4,6 +4,15 @@ const fs = require('fs');
 const path = require('path');
 const { createProfileCache } = require('./profileCache');
 const { createProfileAnalytics } = require('./profileAnalytics');
+const lockfile = (() => {
+    try {
+        return require('proper-lockfile');
+    } catch (error) {
+        return {
+            lock: async () => async () => {},
+        };
+    }
+})();
 
 class ProfileService {
     constructor(options) {
@@ -27,6 +36,8 @@ class ProfileService {
         this._storeCache = { data: null, mtime: 0, expiresAt: 0 };
         this._displayNameIndex = new Map();
         this._watchHandler = null;
+        this._writeQueue = Promise.resolve();
+        this._writeLock = null;
     }
 
     initialize() {
@@ -75,16 +86,45 @@ class ProfileService {
         }
     }
 
-    writeStore(store) {
-        const normalized = { users: store?.users || {} };
-        fs.writeFileSync(this.dataFile, JSON.stringify(normalized, null, 2));
-        const now = Date.now();
-        this._storeCache = {
-            data: normalized,
-            mtime: now,
-            expiresAt: now + this.cacheTtlMs,
-        };
-        this._rebuildDisplayNameIndex(normalized.users);
+    async writeStore(store) {
+        const task = this._writeQueue.then(async () => {
+            const normalized = { users: store?.users || {} };
+            const tempFile = `${this.dataFile}.tmp.${Date.now()}`;
+
+            const release = await lockfile.lock(this.dataFile, {
+                stale: 10000,
+                retries: { retries: 3, minTimeout: 100 },
+            }).catch(() => null);
+
+            if (release) {
+                this._writeLock = release;
+            }
+
+            try {
+                await fs.promises.writeFile(tempFile, JSON.stringify(normalized, null, 2));
+                await fs.promises.rename(tempFile, this.dataFile);
+
+                const now = Date.now();
+                this._storeCache = {
+                    data: normalized,
+                    mtime: now,
+                    expiresAt: now + this.cacheTtlMs,
+                };
+                this._rebuildDisplayNameIndex(normalized.users);
+            } finally {
+                await fs.promises.unlink(tempFile).catch(() => {});
+                if (release) {
+                    await release();
+                }
+                this._writeLock = null;
+            }
+        });
+
+        this._writeQueue = task.catch((error) => {
+            this.logger.error?.('Failed to write profile store:', error);
+        });
+
+        return task;
     }
 
     getProfile(username) {
@@ -141,7 +181,7 @@ class ProfileService {
         return owner;
     }
 
-    updateProfile(username, updates) {
+    async updateProfile(username, updates) {
         if (!username) {
             return null;
         }
@@ -167,7 +207,7 @@ class ProfileService {
         }
 
         if (mutated) {
-            this.writeStore(store);
+            await this.writeStore(store);
             void this._setCacheEntry(key, record);
             this.analytics.record('update', { username: key });
         }
@@ -175,7 +215,7 @@ class ProfileService {
         return { ...record };
     }
 
-    incrementWins(username, amount = 1) {
+    async incrementWins(username, amount = 1) {
         const key = String(username || '').toLowerCase();
         if (!key) {
             return;
@@ -186,13 +226,13 @@ class ProfileService {
         }
         store.users[key].wins = (store.users[key].wins || 0) + Number(amount || 0);
         const totalWins = store.users[key].wins;
-        this.writeStore(store);
+        await this.writeStore(store);
         void this._setCacheEntry(key, store.users[key]);
         this.analytics.record('win', { username: key });
         return totalWins;
     }
 
-    updateAvatar(username, avatarPath) {
+    async updateAvatar(username, avatarPath) {
         const key = String(username || '').toLowerCase();
         if (!key) {
             return null;
@@ -204,20 +244,20 @@ class ProfileService {
         }
         const previousPath = record.avatarPath;
         record.avatarPath = avatarPath;
-        this.writeStore(store);
+        await this.writeStore(store);
         void this._setCacheEntry(key, record);
         this.analytics.record('avatarUpload', { username: key });
         return previousPath || null;
     }
 
-    upsert(username, payload) {
+    async upsert(username, payload) {
         const key = String(username || '').toLowerCase();
         if (!key) {
             return null;
         }
         const store = this.readStore();
         store.users[key] = { ...(store.users[key] || { username }), ...payload };
-        this.writeStore(store);
+        await this.writeStore(store);
         void this._setCacheEntry(key, store.users[key]);
         return { ...store.users[key] };
     }
