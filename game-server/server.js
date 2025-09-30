@@ -1091,7 +1091,19 @@ io.on('connection', (socket) => {
     }
     socket.emit('updateRoomList', getOpenRooms());
 
-    const handleLinkAccount = ({ accountName, displayName }) => {
+    const handlers = {
+        linkAccount: null,
+        setUsername: null,
+        createGame: null,
+        joinGame: null,
+        playerReady: null,
+        startGame: null,
+        submitMove: null,
+        undoMove: null,
+        leaveGame: null,
+    };
+
+    handlers.linkAccount = ({ accountName, displayName }) => {
         const player = players.get(socket);
         if (!player) return;
 
@@ -1141,7 +1153,7 @@ io.on('connection', (socket) => {
         }
     };
 
-    const handleSetUsername = (rawName) => {
+    handlers.setUsername = (rawName) => {
         const player = players.get(socket);
         if (!player) return;
 
@@ -1185,8 +1197,13 @@ io.on('connection', (socket) => {
         }
     };
 
-    socket.on('linkAccount', handleLinkAccount);
-    socket.on('setUsername', handleSetUsername);
+    socket.data.handlers = handlers;
+
+    Object.entries(handlers).forEach(([event, handler]) => {
+        if (handler) {
+            socket.on(event, handler);
+        }
+    });
 
     const getPlayer = () => {
         const p = players.get(socket);
@@ -1224,14 +1241,57 @@ io.on('connection', (socket) => {
         clearPlayerRoom,
     });
 
-    const handleDisconnect = () => {
-        const player = players.get(socket);
+    let cleanedUp = false;
+    let disconnectHandler = null;
+    const cleanup = () => {
+        if (cleanedUp) {
+            return;
+        }
+        cleanedUp = true;
+
+        if (disconnectHandler) {
+            try {
+                socket.off('disconnect', disconnectHandler);
+            } catch (error) {
+                console.warn('[Socket] Failed to detach disconnect handler:', error);
+            }
+        }
+
+        Object.entries(handlers).forEach(([event, handler]) => {
+            if (!handler) {
+                return;
+            }
+            try {
+                socket.off(event, handler);
+            } catch (error) {
+                console.warn(`[Socket] Failed to detach handler for ${event}:`, error);
+            }
+        });
+
+        for (const eventName of socket.eventNames()) {
+            if (eventName === 'disconnect' || eventName === 'newListener' || eventName === 'removeListener') {
+                continue;
+            }
+            try {
+                socket.removeAllListeners(eventName);
+            } catch (error) {
+                console.warn(`[Socket] Failed to remove listeners for ${eventName}:`, error);
+            }
+        }
+
+        players.delete(socket);
+        delete socket.data.playerState;
+        delete socket.data.handlers;
+
+        metricsCollector.decrementSocketConnections();
+        delete socket.data.cleanup;
+    };
+
+    disconnectHandler = () => {
+        const player = getPlayer();
 
         try {
             console.log(`User disconnected: ${socket.id}`);
-
-            socket.off('linkAccount', handleLinkAccount);
-            socket.off('setUsername', handleSetUsername);
 
             if (player?.guestId) {
                 guestSessionManager.recordLastRoom(player.guestId, null);
@@ -1239,9 +1299,6 @@ io.on('connection', (socket) => {
             if (player) {
                 player.inRoom = null;
             }
-
-            players.delete(socket);
-            delete socket.data.playerState;
 
             io.emit('updateRoomList', getOpenRooms());
         } catch (error) {
@@ -1263,11 +1320,13 @@ io.on('connection', (socket) => {
                 });
             }
         } finally {
-            metricsCollector.decrementSocketConnections();
+            cleanup();
         }
     };
 
-    socket.on('disconnect', handleDisconnect);
+    socket.once('disconnect', disconnectHandler);
+
+    socket.data.cleanup = cleanup;
 });
 
 function syncPlayerInRoom(socket) {
@@ -1311,33 +1370,105 @@ function getOpenRooms() {
 }
 
 function instrumentSocketHandlers(socket) {
+    const listenerMap = new Map();
+    const getEventMap = (eventName) => {
+        let eventMap = listenerMap.get(eventName);
+        if (!eventMap) {
+            eventMap = new Map();
+            listenerMap.set(eventName, eventMap);
+        }
+        return eventMap;
+    };
+
+    const trackWrapper = (eventName, handler, wrapped) => {
+        if (!handler || typeof handler !== 'function') {
+            return;
+        }
+        getEventMap(eventName).set(handler, wrapped);
+    };
+
+    const untrackWrapper = (eventName, handler) => {
+        const eventMap = listenerMap.get(eventName);
+        if (!eventMap) {
+            return null;
+        }
+        if (!handler || typeof handler !== 'function') {
+            listenerMap.delete(eventName);
+            return null;
+        }
+        const wrapped = eventMap.get(handler);
+        if (wrapped) {
+            eventMap.delete(handler);
+            if (eventMap.size === 0) {
+                listenerMap.delete(eventName);
+            }
+        }
+        return wrapped || null;
+    };
+
+    const executeHandler = async (eventName, handler, args) => {
+        const start = process.hrtime.bigint();
+        try {
+            const result = handler(...args);
+            if (result && typeof result.then === 'function') {
+                const awaited = await result;
+                const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+                metricsCollector.recordSocketEvent({ eventName, durationMs });
+                return awaited;
+            }
+            const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+            metricsCollector.recordSocketEvent({ eventName, durationMs });
+            return result;
+        } catch (error) {
+            const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+            metricsCollector.recordSocketEvent({ eventName, durationMs, isError: true });
+            metricsCollector.recordError(error, { eventName, transport: 'socket.io' });
+            throw error;
+        }
+    };
+
     const originalOn = socket.on.bind(socket);
+    const originalOnce = socket.once.bind(socket);
+    const originalOff = (socket.off ? socket.off.bind(socket) : socket.removeListener.bind(socket));
+    const originalRemoveListener = socket.removeListener.bind(socket);
+
     socket.on = (eventName, handler) => {
         if (typeof handler !== 'function') {
             return originalOn(eventName, handler);
         }
-        const wrapped = async (...args) => {
-            const start = process.hrtime.bigint();
-            try {
-                const result = handler(...args);
-                if (result && typeof result.then === 'function') {
-                    const awaited = await result;
-                    const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
-                    metricsCollector.recordSocketEvent({ eventName, durationMs });
-                    return awaited;
-                }
-                const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
-                metricsCollector.recordSocketEvent({ eventName, durationMs });
-                return result;
-            } catch (error) {
-                const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
-                metricsCollector.recordSocketEvent({ eventName, durationMs, isError: true });
-                metricsCollector.recordError(error, { eventName, transport: 'socket.io' });
-                throw error;
-            }
-        };
+        const wrapped = (...args) => executeHandler(eventName, handler, args);
+        trackWrapper(eventName, handler, wrapped);
         return originalOn(eventName, wrapped);
     };
+
+    socket.once = (eventName, handler) => {
+        if (typeof handler !== 'function') {
+            return originalOnce(eventName, handler);
+        }
+        const wrapped = async (...args) => {
+            try {
+                return await executeHandler(eventName, handler, args);
+            } finally {
+                untrackWrapper(eventName, handler);
+            }
+        };
+        trackWrapper(eventName, handler, wrapped);
+        return originalOnce(eventName, wrapped);
+    };
+
+    const detach = (eventName, handler, originalFn) => {
+        if (typeof handler !== 'function') {
+            return originalFn(eventName, handler);
+        }
+        const wrapped = untrackWrapper(eventName, handler);
+        if (wrapped) {
+            return originalFn(eventName, wrapped);
+        }
+        return originalFn(eventName, handler);
+    };
+
+    socket.off = (eventName, handler) => detach(eventName, handler, originalOff);
+    socket.removeListener = (eventName, handler) => detach(eventName, handler, originalRemoveListener);
 }
 
 async function establishSession(req, res, usernameKey, onSuccess) {
