@@ -126,7 +126,15 @@ export class CheckersScene {
   }
 
   handleBoardClick(event) {
-    if (!this.canvas || !this.gameState) return;
+    if (!this.canvas || !this.gameState || !this.gameState.board) {
+      console.warn('Board click ignored: game state not ready');
+      return;
+    }
+
+    if (!this.gameState.turnColor || !this.myColor) {
+      console.warn('Board click ignored: turn state invalid');
+      return;
+    }
 
     const rect = this.canvas.getBoundingClientRect();
     const scaleX = this.canvas.width / rect.width;
@@ -191,6 +199,11 @@ export class CheckersScene {
   }
 
   updateGameState(newGameState) {
+    if (!newGameState || typeof newGameState !== 'object') {
+      console.error('Invalid game state update received');
+      return;
+    }
+
     this.gameState = newGameState;
     if (!this.gameState?.board) {
       this.selectedPiece = null;
