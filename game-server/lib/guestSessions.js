@@ -11,11 +11,13 @@ class GuestSessionManager {
         this.ttl = options.ttl || 1000 * 60 * 60 * 24 * 2; // default 2 days
         this.cleanupIntervalMs = options.cleanupIntervalMs || 1000 * 60 * 30; // 30 minutes
         this.sessions = new Map();
+        this.invalidatedTokens = new Set();
         this._dirty = false;
 
         fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
         this._loadFromDisk();
         this._scheduleCleanup();
+        this._scheduleInvalidationCleanup();
     }
 
     createSession() {
@@ -60,6 +62,9 @@ class GuestSessionManager {
     }
 
     getSessionByToken(token) {
+        if (!token || this.invalidatedTokens.has(token)) {
+            return null;
+        }
         const id = this.parseToken(token);
         if (!id) {
             return null;
@@ -78,6 +83,12 @@ class GuestSessionManager {
         session.lastSeen = Date.now();
         this._markDirty();
         return session;
+    }
+
+    invalidateToken(token) {
+        if (token) {
+            this.invalidatedTokens.add(token);
+        }
     }
 
     updateSession(id, updater) {
@@ -151,6 +162,9 @@ class GuestSessionManager {
         if (this._cleanupTimer) {
             clearInterval(this._cleanupTimer);
         }
+        if (this.invalidationCleanup) {
+            clearInterval(this.invalidationCleanup);
+        }
     }
 
     _scheduleCleanup() {
@@ -165,6 +179,15 @@ class GuestSessionManager {
         if (this._cleanupTimer.unref) {
             this._cleanupTimer.unref();
         }
+    }
+
+    _scheduleInvalidationCleanup() {
+        this.invalidationCleanup = setInterval(() => {
+            if (this.invalidatedTokens.size > 10000) {
+                this.invalidatedTokens.clear();
+            }
+        }, 3600000);
+        this.invalidationCleanup.unref?.();
     }
 
     _signSessionId(id) {
