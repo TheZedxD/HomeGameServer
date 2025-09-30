@@ -1580,12 +1580,17 @@ function transferGuestSession(req, res) {
         return null;
     }
 
+    // Clear the guest cookie immediately
     res.clearCookie(GUEST_COOKIE_NAME, {
         httpOnly: true,
         sameSite: 'lax',
         secure: COOKIE_SECURE,
         path: '/',
     });
+
+    // Invalidate the token in the manager
+    guestSessionManager.invalidateToken(req.cookies?.[GUEST_COOKIE_NAME]);
+
     req.guestSession = null;
     return promoted;
 }
