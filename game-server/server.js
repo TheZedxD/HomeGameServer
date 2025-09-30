@@ -8,6 +8,7 @@ const net = require('net');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const multer = require('multer');
 const os = require('os');
 const session = require('express-session');
 const FileStore = require('session-file-store')(session);
@@ -261,7 +262,6 @@ const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
 const SCRYPT_KEY_LENGTH = 64;
 const COOKIE_SECURE = IS_PRODUCTION;
 const MAX_UPLOAD_SIZE = 2 * 1024 * 1024; // 2 MB
-const MAX_ORIGINAL_FILENAME_LENGTH = 150;
 const ALLOWED_AVATAR_MIME_TYPES = new Set([
     'image/jpeg',
     'image/jpg',
@@ -907,55 +907,36 @@ app.post('/api/profile', requireAuth, csrfMiddleware, async (req, res, next) => 
     }
 });
 
-app.post('/api/profile/avatar', requireAuth, csrfMiddleware, (req, res) => {
-    const contentType = req.headers['content-type'] || '';
-    if (!contentType.startsWith('multipart/form-data')) {
-        return res.status(400).json({ error: 'Invalid upload request.' });
-    }
-
-    const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
-    if (!boundaryMatch) {
-        return res.status(400).json({ error: 'Upload boundary not found.' });
-    }
-
-    const boundary = boundaryMatch[1] || boundaryMatch[2];
-    const chunks = [];
-    let total = 0;
-    let aborted = false;
-
-    req.on('data', (chunk) => {
-        if (aborted) return;
-        total += chunk.length;
-        if (total > MAX_UPLOAD_SIZE) {
-            aborted = true;
-            res.status(413).json({ error: 'File is too large. Maximum size is 2MB.' });
-            req.destroy();
-            return;
+const avatarUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: MAX_UPLOAD_SIZE,
+        files: 1,
+        fields: 2,
+    },
+    fileFilter: (req, file, cb) => {
+        if (!ALLOWED_AVATAR_MIME_TYPES.has(file.mimetype)) {
+            return cb(new Error('Invalid file type'));
         }
-        chunks.push(chunk);
-    });
+        cb(null, true);
+    }
+}).single('avatar');
 
-    req.on('end', async () => {
-        if (aborted) return;
+app.post('/api/profile/avatar', requireAuth, csrfMiddleware, (req, res) => {
+    avatarUpload(req, res, async (err) => {
+        if (err) {
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(413).json({ error: 'Avatar must be smaller than 2MB.' });
+            }
+            return res.status(400).json({ error: err.message });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file provided.' });
+        }
+
         try {
-            const buffer = Buffer.concat(chunks);
-            const fileInfo = extractMultipartFile(buffer, boundary);
-            if (!fileInfo || !fileInfo.buffer.length) {
-                return res.status(400).json({ error: 'No file provided.' });
-            }
-
-            if (fileInfo.originalFilename && fileInfo.originalFilename.length > MAX_ORIGINAL_FILENAME_LENGTH) {
-                return res.status(400).json({ error: 'Original filename is too long.' });
-            }
-
-            const normalizedMime = (fileInfo.contentType || '').toLowerCase();
-            if (normalizedMime && !ALLOWED_AVATAR_MIME_TYPES.has(normalizedMime)) {
-                return res.status(400).json({
-                    error: 'Unsupported avatar file type. Allowed formats are JPEG, PNG, GIF, or WebP.',
-                });
-            }
-
-            const processed = await processAvatar(fileInfo.buffer, {
+            const processed = await processAvatar(req.file.buffer, {
                 maxDimension: AVATAR_MAX_DIMENSION,
                 outputFormat: AVATAR_OUTPUT_FORMAT,
             });
@@ -970,8 +951,9 @@ app.post('/api/profile/avatar', requireAuth, csrfMiddleware, (req, res) => {
             }
 
             const timestamp = Date.now();
+            const random = crypto.randomBytes(8).toString('hex');
             const safeBaseName = req.user.username.replace(/[^a-zA-Z0-9_-]/g, '');
-            const finalName = `${safeBaseName || 'avatar'}-${timestamp}${processed.extension}`;
+            const finalName = `${safeBaseName || 'avatar'}-${timestamp}-${random}${processed.extension}`;
             const finalPath = path.join(UPLOAD_DIR, finalName);
             const uploadRoot = path.resolve(UPLOAD_DIR);
             const resolvedPath = path.resolve(finalPath);
@@ -980,7 +962,7 @@ app.post('/api/profile/avatar', requireAuth, csrfMiddleware, (req, res) => {
                 throw new Error('Resolved path escapes upload directory.');
             }
 
-            fs.writeFileSync(resolvedPath, processed.buffer, { mode: 0o600 });
+            await fs.promises.writeFile(resolvedPath, processed.buffer, { mode: 0o600 });
 
             await updateUserAvatar(req.user.username.toLowerCase(), `/uploads/profiles/${finalName}`);
             profileService.analytics.record('avatarProcessed', {
@@ -1634,58 +1616,6 @@ async function updateUserAvatar(usernameKey, avatarPath) {
             }
         }
     }
-}
-
-function sanitizeUploadFilename(filename) {
-    if (typeof filename !== 'string') {
-        return 'upload';
-    }
-    const normalized = filename.normalize('NFKC').replace(/\s+/g, '_');
-    const sanitized = normalized.replace(/[^a-zA-Z0-9._-]/g, '');
-    const trimmed = sanitized.slice(0, MAX_ORIGINAL_FILENAME_LENGTH);
-    return trimmed || 'upload';
-}
-
-function extractMultipartFile(buffer, boundary) {
-    const boundaryText = `--${boundary}`;
-    const boundaryBuffer = Buffer.from(boundaryText);
-    const headerDelimiter = Buffer.from('\r\n\r\n');
-    let start = buffer.indexOf(boundaryBuffer);
-    if (start === -1) {
-        throw new Error('Boundary not found in form data.');
-    }
-
-    start += boundaryBuffer.length + 2; // Skip boundary and CRLF
-    const headerEnd = buffer.indexOf(headerDelimiter, start);
-    if (headerEnd === -1) {
-        throw new Error('Malformed part headers.');
-    }
-
-    const headers = buffer.slice(start, headerEnd).toString('utf8');
-    const contentStart = headerEnd + headerDelimiter.length;
-    const closingBoundary = Buffer.from(`\r\n${boundaryText}--`);
-    let contentEnd = buffer.indexOf(closingBoundary, contentStart);
-    if (contentEnd === -1) {
-        const nextBoundary = Buffer.from(`\r\n${boundaryText}`);
-        contentEnd = buffer.indexOf(nextBoundary, contentStart);
-        if (contentEnd === -1) {
-            throw new Error('Malformed multipart payload.');
-        }
-    }
-
-    let fileEnd = contentEnd;
-    if (buffer[fileEnd - 2] === 13 && buffer[fileEnd - 1] === 10) {
-        fileEnd -= 2;
-    }
-
-    const fileBuffer = buffer.slice(contentStart, fileEnd);
-    const filenameMatch = headers.match(/filename="([^"]*)"/i);
-    const originalFilename = filenameMatch ? path.basename(filenameMatch[1]) : `upload-${Date.now()}`;
-    const filename = sanitizeUploadFilename(originalFilename);
-    const contentTypeMatch = headers.match(/content-type:\s*([^\r\n;]+)/i);
-    const contentType = contentTypeMatch ? contentTypeMatch[1].trim().toLowerCase() : null;
-
-    return { buffer: fileBuffer, filename, originalFilename, contentType };
 }
 
 function isPortAvailable(port) {
