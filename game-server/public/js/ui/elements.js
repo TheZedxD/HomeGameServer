@@ -42,12 +42,14 @@ export function cacheElements() {
     profile: {
       corner: document.getElementById('profile-corner'),
       avatar: document.getElementById('profile-avatar'),
+      avatarPreview: document.getElementById('profile-avatar-preview'),
       displayName: document.getElementById('profile-display-name'),
+      overlayDisplayName: document.getElementById('profile-overlay-display-name'),
       wins: document.getElementById('profile-wins'),
+      overlayWins: document.getElementById('profile-overlay-wins'),
       signInButton: document.getElementById('sign-in-btn'),
       signOutButton: document.getElementById('sign-out-btn'),
       changeAvatarButton: document.getElementById('change-avatar-btn'),
-      viewProfileButton: document.getElementById('view-profile-btn'),
       avatarInput: document.getElementById('avatar-upload-input'),
       avatarForm: document.getElementById('avatar-upload-form')
     },

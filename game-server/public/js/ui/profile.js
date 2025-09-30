@@ -11,15 +11,25 @@ export function createProfileUI(elements, toast, modalManager) {
   let profileManager = null;
 
   const setAvatar = (path, { bustCache = false } = {}) => {
-    if (!profile.avatar) return;
     const finalPath = path || DEFAULT_AVATAR_PATH;
+    let resolvedPath = finalPath;
     if (bustCache && typeof finalPath === 'string' && !finalPath.startsWith('data:')) {
       const url = new URL(finalPath, window.location.origin);
       url.searchParams.set('v', Date.now().toString());
-      profile.avatar.src = url.pathname + url.search;
-    } else {
-      profile.avatar.src = finalPath;
+      resolvedPath = url.pathname + url.search;
     }
+    [profile.avatar, profile.avatarPreview].forEach((img) => {
+      if (img) img.src = resolvedPath;
+    });
+  };
+
+  const registerAvatarFallback = (img) => {
+    if (!img || img.dataset.avatarFallback === 'true') return;
+    img.dataset.avatarFallback = 'true';
+    img.addEventListener('error', () => {
+      if (img.src === DEFAULT_AVATAR_PATH) return;
+      img.src = DEFAULT_AVATAR_PATH;
+    });
   };
 
   const updateNamePreview = (name) => {
@@ -45,14 +55,19 @@ export function createProfileUI(elements, toast, modalManager) {
   const openIdentityEditor = ({ trigger } = {}) => {
     clearNameStatus();
     if (modalManager && identityModal) {
-      modalManager.openModal(identityModal, trigger || identity.openButton || document.activeElement);
+      const fallbackTrigger =
+        trigger || identity.openButton || profile.corner || document.activeElement;
+      modalManager.openModal(identityModal, fallbackTrigger);
     } else {
       identityModal?.classList.remove('hidden');
       identityModal?.setAttribute('aria-hidden', 'false');
       if (trigger instanceof HTMLElement) {
         identityModal?.setAttribute('data-trigger-id', trigger.id || '');
+      } else if (profile.corner) {
+        identityModal?.setAttribute('data-trigger-id', profile.corner.id || '');
       }
     }
+    profile.corner?.setAttribute('aria-expanded', 'true');
     if (identity.input) {
       identity.input.focus();
       identity.input.select();
@@ -65,13 +80,15 @@ export function createProfileUI(elements, toast, modalManager) {
     } else if (identityModal) {
       identityModal.classList.add('hidden');
       identityModal.setAttribute('aria-hidden', 'true');
+      const triggerId = identityModal.getAttribute('data-trigger-id');
       if (restoreFocus) {
-        const triggerId = identityModal.getAttribute('data-trigger-id');
-        const trigger = (triggerId && document.getElementById(triggerId)) || identity.openButton;
+        const trigger =
+          (triggerId && document.getElementById(triggerId)) || identity.openButton || profile.corner;
         trigger?.focus?.();
-        identityModal.removeAttribute('data-trigger-id');
       }
+      identityModal.removeAttribute('data-trigger-id');
     }
+    profile.corner?.setAttribute('aria-expanded', 'false');
   };
 
   const handleDisplayNameChange = async (rawValue, { showStatus = false, closeOnSuccess = false } = {}) => {
@@ -100,6 +117,12 @@ export function createProfileUI(elements, toast, modalManager) {
     } else {
       updateNamePreview(DEFAULT_GUEST_NAME);
     }
+    identityModal?.addEventListener('modal:opened', () => {
+      profile.corner?.setAttribute('aria-expanded', 'true');
+    });
+    identityModal?.addEventListener('modal:closed', () => {
+      profile.corner?.setAttribute('aria-expanded', 'false');
+    });
     identity.openButton?.addEventListener('click', () => openIdentityEditor({ trigger: identity.openButton }));
     identity.closeButton?.addEventListener('click', () => closeIdentityEditor());
     identity.cancelButton?.addEventListener('click', () => closeIdentityEditor());
@@ -170,7 +193,8 @@ export function createProfileUI(elements, toast, modalManager) {
 
   const bindProfileEvents = (manager, { onLeaveGame } = {}) => {
     profileManager = manager;
-    profile.avatar?.addEventListener('error', () => { profile.avatar.src = DEFAULT_AVATAR_PATH; });
+    registerAvatarFallback(profile.avatar);
+    registerAvatarFallback(profile.avatarPreview);
     profile.signInButton?.addEventListener('click', () => { window.location.href = '/login'; });
     profile.signOutButton?.addEventListener('click', async () => {
       try {
@@ -192,7 +216,16 @@ export function createProfileUI(elements, toast, modalManager) {
       hideProfilePrompt(false, { restoreFocus: false });
       openIdentityEditor({ trigger });
     };
-    profile.viewProfileButton?.addEventListener('click', () => focusIdentity(profile.viewProfileButton));
+    const handleCornerActivate = (event) => {
+      if (event.type === 'keydown') {
+        const key = event.key;
+        if (key !== 'Enter' && key !== ' ') return;
+        event.preventDefault();
+      }
+      focusIdentity(profile.corner);
+    };
+    profile.corner?.addEventListener('click', handleCornerActivate);
+    profile.corner?.addEventListener('keydown', handleCornerActivate);
     prompt.editButton?.addEventListener('click', () => focusIdentity(prompt.editButton));
     prompt.dismissButton?.addEventListener('click', () => hideProfilePrompt(true));
     elements.game.exitButton?.addEventListener('click', () => onLeaveGame?.());
@@ -225,16 +258,27 @@ export function createProfileUI(elements, toast, modalManager) {
 
   const updateProfile = (profileData) => {
     const active = profileData || profileManager?.getGuestProfile();
-    const displayName = active?.displayName || DEFAULT_GUEST_NAME;
+    const rawName = active?.displayName || DEFAULT_GUEST_NAME;
+    const displayName = (profileManager?.sanitizeName?.(rawName) || rawName || '').trim() || DEFAULT_GUEST_NAME;
     const wins = Number.isFinite(active?.wins) ? active.wins : 0;
     const storedAvatar = profileManager?.getStoredAvatarPath();
     const avatarPath = active?.avatarPath || storedAvatar || DEFAULT_AVATAR_PATH;
     if (profile.displayName) profile.displayName.textContent = displayName;
+    if (profile.overlayDisplayName) profile.overlayDisplayName.textContent = displayName;
     if (profile.wins) profile.wins.textContent = wins;
+    if (profile.overlayWins) profile.overlayWins.textContent = wins;
+    if (profile.corner) {
+      profile.corner.setAttribute('aria-label', `Open profile preferences for ${displayName}`);
+    }
     setAvatar(avatarPath);
     if (!active?.isGuest && active?.avatarPath) profileManager?.persistLocalAvatarPath(active.avatarPath);
-    if (identity.input) identity.input.value = active?.displayName || '';
-    updateNamePreview(active?.displayName);
+    if (identity.input) {
+      const cleanedInput = active?.displayName
+        ? profileManager?.sanitizeName?.(active.displayName) || active.displayName
+        : '';
+      identity.input.value = cleanedInput;
+    }
+    updateNamePreview(displayName);
   };
 
   const toggleProfileActions = (authenticated) => {
