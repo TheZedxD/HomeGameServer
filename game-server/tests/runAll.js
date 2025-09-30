@@ -151,8 +151,8 @@ test('ProfileService enforces display name uniqueness', async () => {
     });
     service.initialize();
     try {
-        service.upsert('player1', { username: 'player1', displayName: 'Hero', passwordHash: 'hash' });
-        service.upsert('player2', { username: 'player2', displayName: 'Champion', passwordHash: 'hash' });
+        await service.upsert('player1', { username: 'player1', displayName: 'Hero', passwordHash: 'hash' });
+        await service.upsert('player2', { username: 'player2', displayName: 'Champion', passwordHash: 'hash' });
 
         const conflict = service.ensureDisplayNameAvailability('Hero', 'player2');
         assert.strictEqual(conflict, 'player1');

@@ -236,12 +236,12 @@ modularGameServer.resourceMonitor.on('metrics', (snapshot) => {
     });
 });
 
-modularGameServer.roomManager.on('roundEnd', ({ seriesWinnerId }) => {
+modularGameServer.roomManager.on('roundEnd', async ({ seriesWinnerId }) => {
     if (!seriesWinnerId) {
         return;
     }
     try {
-        recordSeriesWin(seriesWinnerId);
+        await recordSeriesWin(seriesWinnerId);
     } catch (error) {
         console.warn('Failed to record series win:', error);
     }
@@ -707,7 +707,7 @@ app.get('/signup', (req, res) => {
     res.sendFile(path.join(__dirname, 'public/signup.html'));
 });
 
-app.post('/signup', authLimiter, csrfMiddleware, (req, res) => {
+app.post('/signup', authLimiter, csrfMiddleware, async (req, res, next) => {
     const rawUsername = req.body.username || '';
     const rawDisplayName = req.body.displayName || rawUsername;
     const password = req.body.password || '';
@@ -741,18 +741,24 @@ app.post('/signup', authLimiter, csrfMiddleware, (req, res) => {
     }
 
     const passwordHash = hashPassword(password);
-    profileService.upsert(key, {
-        username,
-        displayName,
-        passwordHash,
-        wins: 0,
-        avatarPath: null,
-    });
 
-    return establishSession(req, res, key, () => res.redirect('/'));
+    try {
+        await profileService.upsert(key, {
+            username,
+            displayName,
+            passwordHash,
+            wins: 0,
+            avatarPath: null,
+        });
+        await establishSession(req, res, key, () => res.redirect('/'));
+    } catch (error) {
+        if (!res.headersSent) {
+            next(error);
+        }
+    }
 });
 
-app.post('/login', authLimiter, csrfMiddleware, (req, res) => {
+app.post('/login', authLimiter, csrfMiddleware, async (req, res, next) => {
     const rawUsername = req.body.username || '';
     const password = req.body.password || '';
     const username = sanitizeAccountName(rawUsername);
@@ -772,11 +778,17 @@ app.post('/login', authLimiter, csrfMiddleware, (req, res) => {
         return res.status(401).send('Invalid username or password.');
     }
 
-    if (updated) {
-        writeUserStore(store);
-    }
+    try {
+        if (updated) {
+            await writeUserStore(store);
+        }
 
-    return establishSession(req, res, userKey, () => res.redirect('/'));
+        await establishSession(req, res, userKey, () => res.redirect('/'));
+    } catch (error) {
+        if (!res.headersSent) {
+            next(error);
+        }
+    }
 });
 
 app.post('/logout', csrfMiddleware, (req, res) => {
@@ -853,7 +865,7 @@ app.get('/api/profile', requireAuth, (req, res) => {
     });
 });
 
-app.post('/api/profile', requireAuth, csrfMiddleware, (req, res) => {
+app.post('/api/profile', requireAuth, csrfMiddleware, async (req, res, next) => {
     const hasDisplayName = Object.prototype.hasOwnProperty.call(req.body, 'displayName');
     const displayNameValidation = hasDisplayName ? validateDisplayNameInput(req.body.displayName, {
         currentUsername: req.user.username,
@@ -877,15 +889,22 @@ app.post('/api/profile', requireAuth, csrfMiddleware, (req, res) => {
     if (wins !== undefined) {
         userRecord.wins = wins;
     }
-    writeUserStore(store);
 
-    const updated = getUserRecord(userKey);
-    res.json({
-        username: updated.username,
-        displayName: updated.displayName || updated.username,
-        wins: updated.wins || 0,
-        avatarPath: updated.avatarPath || null
-    });
+    try {
+        await writeUserStore(store);
+
+        const updated = getUserRecord(userKey);
+        res.json({
+            username: updated.username,
+            displayName: updated.displayName || updated.username,
+            wins: updated.wins || 0,
+            avatarPath: updated.avatarPath || null
+        });
+    } catch (error) {
+        if (!res.headersSent) {
+            next(error);
+        }
+    }
 });
 
 app.post('/api/profile/avatar', requireAuth, csrfMiddleware, (req, res) => {
@@ -963,7 +982,7 @@ app.post('/api/profile/avatar', requireAuth, csrfMiddleware, (req, res) => {
 
             fs.writeFileSync(resolvedPath, processed.buffer, { mode: 0o600 });
 
-            updateUserAvatar(req.user.username.toLowerCase(), `/uploads/profiles/${finalName}`);
+            await updateUserAvatar(req.user.username.toLowerCase(), `/uploads/profiles/${finalName}`);
             profileService.analytics.record('avatarProcessed', {
                 username: req.user.username.toLowerCase(),
                 width: processed.outputWidth,
@@ -1339,34 +1358,46 @@ function instrumentSocketHandlers(socket) {
     };
 }
 
-function establishSession(req, res, usernameKey, onSuccess) {
+async function establishSession(req, res, usernameKey, onSuccess) {
     const previousSessionId = req.sessionID;
 
-    req.session.regenerate((err) => {
-        if (err) {
-            console.error('Session regeneration failed:', err);
-            return res.status(500).send('Unable to establish session.');
-        }
-
-        if (previousSessionId) {
-            csrfTokens.delete(previousSessionId);
-        }
-
-        req.session.username = usernameKey;
-        req.session.createdAt = Date.now();
-        req.session.lastAccess = Date.now();
-
-        req.session.save((saveErr) => {
-            if (saveErr) {
-                console.error('Session save failed:', saveErr);
-                return res.status(500).send('Unable to persist session.');
+    await new Promise((resolve, reject) => {
+        req.session.regenerate((err) => {
+            if (err) {
+                console.error('Session regeneration failed:', err);
+                res.status(500).send('Unable to establish session.');
+                return reject(err);
             }
 
-            issueAuthenticationState(req, res, usernameKey);
-
-            if (typeof onSuccess === 'function') {
-                onSuccess();
+            if (previousSessionId) {
+                csrfTokens.delete(previousSessionId);
             }
+
+            req.session.username = usernameKey;
+            req.session.createdAt = Date.now();
+            req.session.lastAccess = Date.now();
+
+            req.session.save(async (saveErr) => {
+                if (saveErr) {
+                    console.error('Session save failed:', saveErr);
+                    res.status(500).send('Unable to persist session.');
+                    return reject(saveErr);
+                }
+
+                try {
+                    await issueAuthenticationState(req, res, usernameKey);
+                    if (typeof onSuccess === 'function') {
+                        await onSuccess();
+                    }
+                    resolve();
+                } catch (error) {
+                    console.error('Failed to finalize session state:', error);
+                    if (!res.headersSent) {
+                        res.status(500).send('Unable to persist session.');
+                    }
+                    reject(error);
+                }
+            });
         });
     });
 }
@@ -1375,7 +1406,7 @@ function establishSession(req, res, usernameKey, onSuccess) {
  * Persist a freshly authenticated user's state across cookies and
  * upgrade any guest metadata that was captured prior to sign-in.
  */
-function issueAuthenticationState(req, res, usernameKey) {
+async function issueAuthenticationState(req, res, usernameKey) {
     let userRecord = getUserRecord(usernameKey);
     if (!userRecord) {
         return;
@@ -1383,7 +1414,7 @@ function issueAuthenticationState(req, res, usernameKey) {
 
     const transfer = transferGuestSession(req, res);
     if (transfer?.data) {
-        const updated = applyGuestProgressToUser(usernameKey, transfer.data);
+        const updated = await applyGuestProgressToUser(usernameKey, transfer.data);
         if (updated) {
             userRecord = updated;
         }
@@ -1437,7 +1468,7 @@ function transferGuestSession(req, res) {
 /**
  * Apply guest game progress to a durable user account.
  */
-function applyGuestProgressToUser(usernameKey, guestData) {
+async function applyGuestProgressToUser(usernameKey, guestData) {
     if (!guestData) {
         return null;
     }
@@ -1473,7 +1504,7 @@ function applyGuestProgressToUser(usernameKey, guestData) {
     }
 
     if (mutated) {
-        writeUserStore(store);
+        await writeUserStore(store);
     }
 
     return record;
@@ -1490,7 +1521,7 @@ function readUserStore() {
     return profileService.readStore();
 }
 
-function writeUserStore(store) {
+async function writeUserStore(store) {
     return profileService.writeStore(store);
 }
 
@@ -1570,7 +1601,7 @@ function verifyAndUpdatePassword(store, usernameKey, password) {
     return { valid: false, updated: false };
 }
 
-function recordSeriesWin(winnerSocketId) {
+async function recordSeriesWin(winnerSocketId) {
     const socket = io.sockets.sockets.get(winnerSocketId);
     if (!socket) {
         return;
@@ -1581,18 +1612,18 @@ function recordSeriesWin(winnerSocketId) {
         return;
     }
     if (participant.account) {
-        incrementUserWins(participant.account);
+        await incrementUserWins(participant.account);
     } else if (participant.guestId) {
         guestSessionManager.recordWin(participant.guestId);
     }
 }
 
-function incrementUserWins(accountName) {
+async function incrementUserWins(accountName) {
     return profileService.incrementWins(accountName);
 }
 
-function updateUserAvatar(usernameKey, avatarPath) {
-    const previousPath = profileService.updateAvatar(usernameKey, avatarPath);
+async function updateUserAvatar(usernameKey, avatarPath) {
+    const previousPath = await profileService.updateAvatar(usernameKey, avatarPath);
     if (previousPath && previousPath.startsWith('/uploads/profiles/')) {
         const absolutePath = path.join(__dirname, 'public', previousPath);
         if (fs.existsSync(absolutePath)) {
