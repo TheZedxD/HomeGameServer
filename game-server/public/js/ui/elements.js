@@ -8,6 +8,7 @@ export function cacheElements() {
     modals: {
       createGame: document.getElementById('create-game-modal'),
       gameOver: document.getElementById('game-over-message'),
+      pauseMenu: document.getElementById('pause-menu'),
       profilePrompt: document.getElementById('profile-prompt-modal'),
       identityEditor: document.getElementById('identity-overlay')
     },
@@ -62,6 +63,9 @@ export function cacheElements() {
       color: document.getElementById('player-color'),
       turn: document.getElementById('turn-indicator'),
       container: document.getElementById('game-container'),
+      pauseButton: document.getElementById('pause-game-btn'),
+      resumeButton: document.getElementById('resume-game-btn'),
+      pauseExitButton: document.getElementById('pause-exit-to-menu-btn'),
       exitButton: document.getElementById('exit-to-menu-btn'),
       gameOverExitButton: document.getElementById('game-over-exit-btn'),
       winnerText: document.getElementById('winner-text')

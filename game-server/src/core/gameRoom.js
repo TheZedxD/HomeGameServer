@@ -17,6 +17,7 @@ class GameRoom extends EventEmitter {
         this.gameInstance = null;
         this.stateSynchronizer = null;
         this.stateManager = null;
+        this.isClosing = false;
     }
 
     attachGame(gameInstance) {

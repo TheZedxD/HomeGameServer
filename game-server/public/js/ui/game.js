@@ -140,12 +140,30 @@ export function createGameUI(elements, modalManager) {
     }
   }
 
+  function togglePauseMenu(show) {
+    if (!modals.pauseMenu) return;
+    if (show) {
+      if (modalManager) {
+        modalManager.openModal(modals.pauseMenu);
+      } else {
+        modals.pauseMenu.classList.remove('hidden');
+      }
+    } else {
+      if (modalManager) {
+        modalManager.closeModal(modals.pauseMenu);
+      } else {
+        modals.pauseMenu.classList.add('hidden');
+      }
+    }
+  }
+
   return {
     syncPlayers,
     updateScoreboard,
     setScoreboardVisibility,
     updateTurnIndicator,
     showGameOver,
+    togglePauseMenu,
     setGameType
   };
 }

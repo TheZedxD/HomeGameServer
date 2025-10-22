@@ -14,7 +14,24 @@ function createSessionMaintenance(options = {}) {
         throw new Error('Session maintenance requires a sessionDir path.');
     }
 
-    function cleanupExpiredSessions() {
+    async function deleteFileWithRetry(filePath, maxRetries = 3) {
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                fs.unlinkSync(filePath);
+                return true;
+            } catch (error) {
+                if ((error.code === 'EACCES' || error.code === 'EBUSY') && attempt < maxRetries) {
+                    const delayMs = Math.pow(2, attempt) * 100;
+                    await new Promise(resolve => setTimeout(resolve, delayMs));
+                    continue;
+                }
+                throw error;
+            }
+        }
+        return false;
+    }
+
+    async function cleanupExpiredSessions() {
         try {
             const entries = fs.readdirSync(sessionDir);
             const now = Date.now();
@@ -29,7 +46,7 @@ function createSessionMaintenance(options = {}) {
                 const ageMs = now - stats.mtimeMs;
                 if (ageMs > ttlMs * 1.5) {
                     try {
-                        fs.unlinkSync(filePath);
+                        await deleteFileWithRetry(filePath);
                         logger.debug?.('Removed expired session file:', filePath);
                     } catch (error) {
                         logger.warn?.('Unable to remove expired session file:', filePath, error.message);

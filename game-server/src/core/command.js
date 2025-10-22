@@ -42,7 +42,9 @@ class CommandBus extends EventEmitter {
             playerId: descriptor.playerId,
             payload: descriptor.payload,
         };
-        const outcome = handler.execute(context);
+
+        const outcome = this._executeWithTimeout(handler, context, 5000);
+
         if (!outcome || typeof outcome !== 'object') {
             throw new Error('Command handler must return an outcome object.');
         }
@@ -61,6 +63,24 @@ class CommandBus extends EventEmitter {
             this.history.push({ descriptor, undo: () => outcome.undo(this.stateManager) });
         }
         this.emit('commandExecuted', { descriptor, outcome });
+        return outcome;
+    }
+
+    _executeWithTimeout(handler, context, timeoutMs) {
+        const startTime = Date.now();
+        let outcome;
+
+        try {
+            outcome = handler.execute(context);
+        } catch (error) {
+            throw error;
+        }
+
+        const elapsed = Date.now() - startTime;
+        if (elapsed > timeoutMs) {
+            throw new Error(`Command execution timed out after ${elapsed}ms`);
+        }
+
         return outcome;
     }
 

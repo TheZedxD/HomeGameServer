@@ -76,6 +76,9 @@ class GameRoomManager extends EventEmitter {
         if (!room) {
             throw new Error(`Room ${roomId} not found.`);
         }
+        if (room.isClosing) {
+            throw new Error(`Room ${roomId} is closing.`);
+        }
         let playerState;
         try {
             playerState = room.playerManager.addPlayer(player);
@@ -104,6 +107,7 @@ class GameRoomManager extends EventEmitter {
         try {
             removed = room.playerManager.removePlayer(playerId);
             if (room.playerManager.players.size === 0) {
+                room.isClosing = true;
                 this.deleteRoom(roomId);
             } else {
                 this.emit('roomUpdated', room.toJSON());
@@ -117,6 +121,7 @@ class GameRoomManager extends EventEmitter {
                     this._logError('leaveRoom:recovery', recoveryError, context);
                 }
             }
+            room.isClosing = false;
             this._logError('leaveRoom', error, context);
             throw error;
         }
