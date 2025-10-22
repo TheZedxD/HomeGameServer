@@ -165,7 +165,7 @@ class GameRoomManager extends EventEmitter {
         }
     }
 
-    startGame(roomId) {
+    startGame(roomId, options = {}) {
         const room = this.getRoom(roomId);
         if (!room) throw new Error('Room not found');
         const context = { action: 'startGame', roomId };
@@ -185,6 +185,7 @@ class GameRoomManager extends EventEmitter {
                 metadata: room.metadata,
                 minPlayers: definition.minPlayers,
                 maxPlayers: definition.maxPlayers,
+                initialBalances: options.initialBalances || {},
             });
             synchronizer = room.attachGame(gameInstance);
             synchronizer.on('sync', async (payload) => {
