@@ -321,29 +321,45 @@ class ModularGameServer extends EventEmitter {
         try {
             const room = this.roomManager.getRoom(roomId);
             const wasGameActive = room?.gameInstance != null;
+            const gameDefinition = room?.gameId ? this.registry.get(room.gameId) : null;
+            const playersBeforeLeave = room?.playerManager.players.size || 0;
 
             await this.roomManager.leaveRoom(roomId, socket.id);
             socket.leave(roomId);
             clearPlayerRoom();
 
             const roomAfterLeave = this.roomManager.getRoom(roomId);
+            const playersAfterLeave = roomAfterLeave?.playerManager.players.size || 0;
 
             if (wasGameActive && disconnect) {
-                if (roomAfterLeave) {
-                    this.io.to(roomId).emit('playerLeft', 'A player has disconnected. The match has ended.');
+                // Check if this is a 2-player game or if remaining players < minimum required
+                const is2PlayerGame = gameDefinition?.maxPlayers === 2;
+                const belowMinimum = gameDefinition?.minPlayers && playersAfterLeave < gameDefinition.minPlayers;
 
-                    setTimeout(() => {
-                        this.io.to(roomId).emit('roomClosing', {
-                            roomId,
-                            reason: 'Player disconnected',
-                            secondsRemaining: 3,
-                        });
+                if (is2PlayerGame || belowMinimum) {
+                    // Close the room for 2-player games or if below minimum players
+                    if (roomAfterLeave) {
+                        this.io.to(roomId).emit('playerLeft', 'A player has disconnected. The match has ended.');
 
                         setTimeout(() => {
-                            this.io.to(roomId).emit('roomClosed', { roomId, reason: 'Player disconnected' });
-                            this.roomManager.deleteRoom(roomId);
-                        }, 3000);
-                    }, 1000);
+                            this.io.to(roomId).emit('roomClosing', {
+                                roomId,
+                                reason: 'Player disconnected',
+                                secondsRemaining: 3,
+                            });
+
+                            setTimeout(() => {
+                                this.io.to(roomId).emit('roomClosed', { roomId, reason: 'Player disconnected' });
+                                this.roomManager.deleteRoom(roomId);
+                            }, 3000);
+                        }, 1000);
+                    }
+                } else {
+                    // For multi-player games (3+ players), just notify and continue
+                    if (roomAfterLeave) {
+                        this.io.to(roomId).emit('playerLeft', 'A player has exited the game.');
+                        this.io.to(roomId).emit('roomStateUpdate', roomAfterLeave.toJSON());
+                    }
                 }
             } else if (roomAfterLeave) {
                 this.io.to(roomId).emit('roomStateUpdate', roomAfterLeave.toJSON());

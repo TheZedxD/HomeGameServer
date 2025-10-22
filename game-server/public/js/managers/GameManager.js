@@ -1,4 +1,5 @@
 import { CheckersScene } from '../components/CheckersScene.js';
+import { CardGameScene } from '../components/CardGameScene.js';
 import { DEFAULT_GUEST_NAME } from './ProfileManager.js';
 import { ErrorHandler } from '../utils/ErrorHandler.js';
 
@@ -13,14 +14,32 @@ const DEFAULT_GAME_METADATA = {
     name: 'Checkers',
     description: 'Classic 2-player strategy game.',
     minPlayers: 2,
-    maxPlayers: 2
+    maxPlayers: 2,
+    category: 'board'
   },
   'tic-tac-toe': {
     id: 'tic-tac-toe',
     name: 'Tic-Tac-Toe',
     description: 'Classic 3×3 strategy game.',
     minPlayers: 2,
-    maxPlayers: 2
+    maxPlayers: 2,
+    category: 'board'
+  },
+  war: {
+    id: 'war',
+    name: 'War',
+    description: 'Classic card game - highest card wins!',
+    minPlayers: 2,
+    maxPlayers: 2,
+    category: 'cards'
+  },
+  hearts: {
+    id: 'hearts',
+    name: 'Hearts',
+    description: 'Avoid hearts and the Queen of Spades!',
+    minPlayers: 4,
+    maxPlayers: 4,
+    category: 'cards'
   }
 };
 
@@ -39,7 +58,9 @@ export class GameManager {
 
     this.availableGames = this.normalizeAvailableGames([
       DEFAULT_GAME_METADATA.checkers,
-      DEFAULT_GAME_METADATA['tic-tac-toe']
+      DEFAULT_GAME_METADATA['tic-tac-toe'],
+      DEFAULT_GAME_METADATA.war,
+      DEFAULT_GAME_METADATA.hearts
     ]);
 
     this.uiManager.setRoomJoinHandler((roomId) => this.joinGame(roomId));
@@ -198,7 +219,9 @@ export class GameManager {
           { players: this.currentPlayers, gameId: this.activeGameId }
         );
       }
-      if (seriesWinnerId && seriesWinnerId === this.myPlayerId) {
+      // Reload profile if current player won (handles both series and single game wins)
+      const actualWinnerId = seriesWinnerId || event.winnerId;
+      if (actualWinnerId && actualWinnerId === this.myPlayerId) {
         this.profileManager.loadProfile();
       }
     });
@@ -294,7 +317,26 @@ export class GameManager {
 
   startGame(config) {
     this.destroyGameInstance();
-    this.gameInstance = new CheckersScene({ ...config, containerId: 'game-container' });
+
+    // Determine which scene to use based on game type
+    const gameType = this.activeGameId;
+    const gameMetadata = DEFAULT_GAME_METADATA[gameType];
+
+    if (gameMetadata?.category === 'cards') {
+      // Use CardGameScene for card games
+      this.gameInstance = new CardGameScene({
+        ...config,
+        playerId: this.myPlayerId,
+        containerId: 'game-container'
+      });
+    } else {
+      // Use CheckersScene for board games (checkers, tic-tac-toe)
+      this.gameInstance = new CheckersScene({
+        ...config,
+        containerId: 'game-container'
+      });
+    }
+
     if (typeof this.gameInstance.init === 'function') {
       this.gameInstance.init();
     }

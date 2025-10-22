@@ -248,12 +248,14 @@ modularGameServer.resourceMonitor.on('metrics', (snapshot) => {
     });
 });
 
-modularGameServer.roomManager.on('roundEnd', async ({ seriesWinnerId }) => {
-    if (!seriesWinnerId) {
+modularGameServer.roomManager.on('roundEnd', async ({ seriesWinnerId, winnerId }) => {
+    // Support both seriesWinnerId (for series-based games) and winnerId (for single game wins)
+    const actualWinnerId = seriesWinnerId || winnerId;
+    if (!actualWinnerId) {
         return;
     }
     try {
-        await recordSeriesWin(seriesWinnerId);
+        await recordSeriesWin(actualWinnerId);
     } catch (error) {
         console.warn('Failed to record series win:', error);
     }
