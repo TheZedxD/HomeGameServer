@@ -118,7 +118,22 @@
                         <p class="game-stage__meta">The board adapts automatically to your screen size.</p>
                     </div>
                     <div class="match-controls" aria-label="Game actions">
+                        <button id="pause-game-btn" class="btn btn-secondary" type="button">Pause (ESC)</button>
                         <button id="exit-to-menu-btn" class="btn" type="button">Exit to Menu</button>
+                    </div>
+                    <div id="pause-menu" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="pause-menu-title" tabindex="-1">
+                        <div class="modal-content classic-raised">
+                            <div class="title-bar">
+                                <span class="title-bar-text" id="pause-menu-title">Game Paused</span>
+                            </div>
+                            <div class="modal-body">
+                                <p>The game is paused. Other players can still see the board.</p>
+                                <div class="modal-actions">
+                                    <button id="resume-game-btn" class="btn btn-primary" type="button">Resume (ESC)</button>
+                                    <button id="pause-exit-to-menu-btn" class="btn btn-warning" type="button">Exit to Lobby</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div id="game-over-message" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="winner-text" tabindex="-1">
                         <div class="modal-content classic-raised">

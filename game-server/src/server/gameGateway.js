@@ -140,7 +140,7 @@ class ModularGameServer extends EventEmitter {
             timestamp: Date.now(),
         });
         socket.on('createGame', async (payload = {}) => {
-            console.log('createGame received:', payload, 'from socket:', socket.id);
+            this.logger.debug('createGame received:', payload, 'from socket:', socket.id);
             try {
                 if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
                     throw new Error('Create game payload must be an object.');
@@ -186,21 +186,19 @@ class ModularGameServer extends EventEmitter {
                     },
                     metadata: { mode },
                 });
-                console.log('Room created:', room.id, room.toJSON());
+                this.logger.debug('Room created:', room.id);
                 await this.roomManager.joinRoom(room.id, {
                     id: socket.id,
                     displayName: player?.username || player?.displayName || 'Player',
                     metadata: { account: player?.account || null },
                     isReady: true,
                 });
-                console.log('Host joined room:', room.id);
+                this.logger.debug('Host joined room:', room.id);
                 setPlayerRoom(room.id);
                 socket.join(room.id);
-                console.log('Broadcasting room state to:', room.id);
                 socket.emit('joinedMatchLobby', { room: room.toJSON(), yourId: socket.id });
                 this.io.to(room.id).emit('roomStateUpdate', room.toJSON());
             } catch (error) {
-                console.error('createGame error:', error);
                 this.logger.error('Failed to create game:', error);
                 socket.emit('error', error.message);
             }
@@ -218,8 +216,7 @@ class ModularGameServer extends EventEmitter {
                 }
 
                 const room = this.roomManager.getRoom(sanitizedRoomId);
-                console.log('Player attempting to join room:', sanitizedRoomId, 'Socket ID:', socket.id);
-                console.log('Room exists:', !!room, 'Room data:', room?.toJSON());
+                this.logger.debug('Player attempting to join room:', sanitizedRoomId, 'Socket ID:', socket.id);
                 if (!room) {
                     throw new Error(`Room ${sanitizedRoomId} does not exist.`);
                 }
@@ -234,7 +231,7 @@ class ModularGameServer extends EventEmitter {
                     isReady: false,
                 });
                 const updatedRoom = this.roomManager.getRoom(room.id);
-                console.log('Room after join:', updatedRoom?.toJSON());
+                this.logger.debug('Room after join:', sanitizedRoomId);
                 setPlayerRoom(room.id);
                 socket.join(room.id);
                 const roomState = updatedRoom ? updatedRoom.toJSON() : room.toJSON();
@@ -320,22 +317,43 @@ class ModularGameServer extends EventEmitter {
         });
     }
 
-    _leaveRoom(socket, roomId, clearPlayerRoom, { disconnect = false } = {}) {
-        this.roomManager.leaveRoom(roomId, socket.id)
-            .then(() => {
-                socket.leave(roomId);
-                clearPlayerRoom();
-                const room = this.roomManager.getRoom(roomId);
-                if (room) {
-                    this.io.to(roomId).emit('roomStateUpdate', room.toJSON());
+    async _leaveRoom(socket, roomId, clearPlayerRoom, { disconnect = false } = {}) {
+        try {
+            const room = this.roomManager.getRoom(roomId);
+            const wasGameActive = room?.gameInstance != null;
+
+            await this.roomManager.leaveRoom(roomId, socket.id);
+            socket.leave(roomId);
+            clearPlayerRoom();
+
+            const roomAfterLeave = this.roomManager.getRoom(roomId);
+
+            if (wasGameActive && disconnect) {
+                if (roomAfterLeave) {
+                    this.io.to(roomId).emit('playerLeft', 'A player has disconnected. The match has ended.');
+
+                    setTimeout(() => {
+                        this.io.to(roomId).emit('roomClosing', {
+                            roomId,
+                            reason: 'Player disconnected',
+                            secondsRemaining: 3,
+                        });
+
+                        setTimeout(() => {
+                            this.io.to(roomId).emit('roomClosed', { roomId, reason: 'Player disconnected' });
+                            this.roomManager.deleteRoom(roomId);
+                        }, 3000);
+                    }, 1000);
                 }
+            } else if (roomAfterLeave) {
+                this.io.to(roomId).emit('roomStateUpdate', roomAfterLeave.toJSON());
                 if (disconnect) {
                     this.io.to(roomId).emit('playerLeft', 'A player has disconnected.');
                 }
-            })
-            .catch((error) => {
-                this.logger.error('Failed to leave room:', error);
-            });
+            }
+        } catch (error) {
+            this.logger.error('Failed to leave room:', error);
+        }
     }
 
     notifyRoomUpdate(roomId) {

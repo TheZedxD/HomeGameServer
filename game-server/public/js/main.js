@@ -37,6 +37,56 @@ async function loadNetworkInfo() {
   }
 }
 
+function setupPauseMenuHandlers(uiManager, gameManager) {
+  let isPaused = false;
+
+  const pauseButton = uiManager.elements.game.pauseButton;
+  const resumeButton = uiManager.elements.game.resumeButton;
+  const pauseExitButton = uiManager.elements.game.pauseExitButton;
+
+  const togglePause = () => {
+    isPaused = !isPaused;
+    uiManager.gameUI.togglePauseMenu(isPaused);
+  };
+
+  const closePauseMenu = () => {
+    isPaused = false;
+    uiManager.gameUI.togglePauseMenu(false);
+  };
+
+  if (pauseButton) {
+    pauseButton.addEventListener('click', togglePause);
+  }
+
+  if (resumeButton) {
+    resumeButton.addEventListener('click', closePauseMenu);
+  }
+
+  if (pauseExitButton) {
+    pauseExitButton.addEventListener('click', () => {
+      closePauseMenu();
+      gameManager.leaveGame();
+    });
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && uiManager.currentView === 'gameUI') {
+      const pauseMenu = uiManager.elements.modals.pauseMenu;
+      const gameOverModal = uiManager.elements.modals.gameOver;
+
+      if (gameOverModal && !gameOverModal.classList.contains('hidden')) {
+        return;
+      }
+
+      if (pauseMenu && !pauseMenu.classList.contains('hidden')) {
+        closePauseMenu();
+      } else {
+        togglePause();
+      }
+    }
+  });
+}
+
 async function initializeApp() {
   const socket = io({
     transports: ['websocket', 'polling'],
@@ -64,6 +114,8 @@ async function initializeApp() {
   uiManager.showView('mainLobby');
   uiManager.renderRoomList([]);
   uiManager.setScoreboardVisibility(false);
+
+  setupPauseMenuHandlers(uiManager, gameManager);
 
   profileManager.subscribe((profile) => {
     uiManager.updateProfileUI(profile);
