@@ -53,21 +53,64 @@ export function createLobbyUI(elements, toast, modalManager) {
     const list = lobby.gameSelectionList;
     if (!list) return;
     list.innerHTML = '';
-    availableGames.forEach((game) => {
-      const button = document.createElement('button');
-      button.className = 'btn btn-primary';
-      button.type = 'button';
-      button.textContent = game.name;
-      button.addEventListener('click', () => {
-        onSelect?.(game);
-        if (modalManager && modals.createGame) {
-          modalManager.closeModal(modals.createGame);
-        } else {
-          modals.createGame?.classList.add('hidden');
-        }
+
+    // Separate casino games from regular games
+    const casinoGames = availableGames.filter(game => game.isCasino);
+    const regularGames = availableGames.filter(game => !game.isCasino);
+
+    // Add casino games section if there are any
+    if (casinoGames.length > 0) {
+      const casinoHeader = document.createElement('h4');
+      casinoHeader.textContent = 'Casino Games';
+      casinoHeader.style.color = 'var(--text-primary)';
+      casinoHeader.style.marginTop = '0';
+      casinoHeader.style.marginBottom = '10px';
+      casinoHeader.style.fontSize = '1.1rem';
+      list.appendChild(casinoHeader);
+
+      casinoGames.forEach((game) => {
+        const button = document.createElement('button');
+        button.className = 'btn btn-primary';
+        button.type = 'button';
+        button.textContent = `${game.name} 🎰`;
+        button.addEventListener('click', () => {
+          onSelect?.(game);
+          if (modalManager && modals.createGame) {
+            modalManager.closeModal(modals.createGame);
+          } else {
+            modals.createGame?.classList.add('hidden');
+          }
+        });
+        list.appendChild(button);
       });
-      list.appendChild(button);
-    });
+    }
+
+    // Add regular games section
+    if (regularGames.length > 0) {
+      const regularHeader = document.createElement('h4');
+      regularHeader.textContent = 'Card & Board Games';
+      regularHeader.style.color = 'var(--text-primary)';
+      regularHeader.style.marginTop = casinoGames.length > 0 ? '20px' : '0';
+      regularHeader.style.marginBottom = '10px';
+      regularHeader.style.fontSize = '1.1rem';
+      list.appendChild(regularHeader);
+
+      regularGames.forEach((game) => {
+        const button = document.createElement('button');
+        button.className = 'btn btn-primary';
+        button.type = 'button';
+        button.textContent = game.name;
+        button.addEventListener('click', () => {
+          onSelect?.(game);
+          if (modalManager && modals.createGame) {
+            modalManager.closeModal(modals.createGame);
+          } else {
+            modals.createGame?.classList.add('hidden');
+          }
+        });
+        list.appendChild(button);
+      });
+    }
   }
 
   function bindLobbyControls({ availableGames = [], onReady, onStartGame, onCreateGame, onJoinGame }) {
@@ -140,13 +183,15 @@ export function createLobbyUI(elements, toast, modalManager) {
 
     matchLobby.title.textContent = `${room.gameType} Lobby`;
     const playerIds = Object.keys(room.players);
+    const isCasinoGame = room.isCasino || false;
 
     if (playerIds.length > 0) {
       const player1 = room.players[playerIds[0]];
       matchLobby.player1Card.classList.add('filled');
       const p1Name = derivePlayerLabel(player1, 'Player 1');
       const p1HostSuffix = playerIds[0] === room.hostId ? ' (Host)' : '';
-      matchLobby.player1Card.querySelector('.player-name').textContent = `${p1Name}${p1HostSuffix}`;
+      const p1Balance = isCasinoGame && player1.balance !== undefined ? ` - $${player1.balance}` : '';
+      matchLobby.player1Card.querySelector('.player-name').textContent = `${p1Name}${p1HostSuffix}${p1Balance}`;
       matchLobby.player1Status.textContent = player1?.isReady ? 'Ready' : 'Not Ready';
       matchLobby.player1Status.className = `status ${player1?.isReady ? 'ready' : 'not-ready'}`;
     }
@@ -156,7 +201,8 @@ export function createLobbyUI(elements, toast, modalManager) {
       matchLobby.player2Card.classList.add('filled');
       const p2Name = derivePlayerLabel(player2, 'Player 2');
       const p2HostSuffix = playerIds[1] === room.hostId ? ' (Host)' : '';
-      matchLobby.player2Card.querySelector('.player-name').textContent = `${p2Name}${p2HostSuffix}`;
+      const p2Balance = isCasinoGame && player2.balance !== undefined ? ` - $${player2.balance}` : '';
+      matchLobby.player2Card.querySelector('.player-name').textContent = `${p2Name}${p2HostSuffix}${p2Balance}`;
       matchLobby.player2Status.textContent = player2?.isReady ? 'Ready' : 'Not Ready';
       matchLobby.player2Status.className = `status ${player2?.isReady ? 'ready' : 'not-ready'}`;
     } else {

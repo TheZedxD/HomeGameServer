@@ -15,4 +15,5 @@ module.exports = {
     StateSynchronizer: require('./stateSynchronizer'),
     ResourceMonitor: require('./resourceMonitor'),
     InMemoryGameRepository: require('./repositories/inMemoryGameRepository'),
+    BettingManager: require('./bettingManager').BettingManager,
 };

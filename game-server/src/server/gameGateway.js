@@ -13,10 +13,11 @@ const { getPluginDirectory } = require('../plugins');
 const { sanitizeRoomCode, sanitizeTextInput } = require('../security/validators');
 
 class ModularGameServer extends EventEmitter {
-    constructor({ io, logger = console, pluginDirectory }) {
+    constructor({ io, logger = console, pluginDirectory, profileService = null }) {
         super();
         this.io = io;
         this.logger = logger;
+        this.profileService = profileService;
         this.roomListVersion = 0;
         this.registry = new GameRegistry();
         this.pluginManager = new PluginManager({ registry: this.registry, logger });
@@ -34,7 +35,14 @@ class ModularGameServer extends EventEmitter {
         const directory = pluginDirectory || getPluginDirectory();
         try {
             await this.pluginManager.loadFromDirectory(directory);
-            this.io.emit('availableGames', this.registry.list().map(({ id, name, minPlayers, maxPlayers }) => ({ id, name, minPlayers, maxPlayers })));
+            this.io.emit('availableGames', this.registry.list().map(({ id, name, minPlayers, maxPlayers, category, isCasino }) => ({
+                id,
+                name,
+                minPlayers,
+                maxPlayers,
+                category: category || 'other',
+                isCasino: isCasino || false
+            })));
         } catch (error) {
             this.logger.error('Failed to load game plugins:', error);
         }
@@ -69,7 +77,7 @@ class ModularGameServer extends EventEmitter {
             const room = this.roomManager.getRoom(id);
             if (room) {
                 this.io.to(id).emit('roomStateUpdate', {
-                    ...room.toJSON(),
+                    ...this._enrichRoomData(room),
                     timestamp: Date.now(),
                 });
             }
@@ -196,8 +204,8 @@ class ModularGameServer extends EventEmitter {
                 this.logger.debug('Host joined room:', room.id);
                 setPlayerRoom(room.id);
                 socket.join(room.id);
-                socket.emit('joinedMatchLobby', { room: room.toJSON(), yourId: socket.id });
-                this.io.to(room.id).emit('roomStateUpdate', room.toJSON());
+                socket.emit('joinedMatchLobby', { room: this._enrichRoomData(room), yourId: socket.id });
+                this.io.to(room.id).emit('roomStateUpdate', this._enrichRoomData(room));
             } catch (error) {
                 this.logger.error('Failed to create game:', error);
                 socket.emit('error', error.message);
@@ -234,9 +242,9 @@ class ModularGameServer extends EventEmitter {
                 this.logger.debug('Room after join:', sanitizedRoomId);
                 setPlayerRoom(room.id);
                 socket.join(room.id);
-                const roomState = updatedRoom ? updatedRoom.toJSON() : room.toJSON();
-                socket.emit('joinedMatchLobby', { room: roomState, yourId: socket.id });
-                this.io.to(room.id).emit('roomStateUpdate', roomState);
+                const roomToUse = updatedRoom || room;
+                socket.emit('joinedMatchLobby', { room: this._enrichRoomData(roomToUse), yourId: socket.id });
+                this.io.to(room.id).emit('roomStateUpdate', this._enrichRoomData(roomToUse));
             } catch (error) {
                 socket.emit('error', error.message);
             }
@@ -248,14 +256,17 @@ class ModularGameServer extends EventEmitter {
             try {
                 const updated = this.roomManager.toggleReady(player.inRoom, socket.id);
                 if (updated) {
-                    this.io.to(player.inRoom).emit('roomStateUpdate', this.roomManager.getRoom(player.inRoom).toJSON());
+                    const room = this.roomManager.getRoom(player.inRoom);
+                    if (room) {
+                        this.io.to(player.inRoom).emit('roomStateUpdate', this._enrichRoomData(room));
+                    }
                 }
             } catch (error) {
                 socket.emit('error', error.message);
             }
         });
 
-        socket.on('startGame', () => {
+        socket.on('startGame', async () => {
             const player = getPlayer();
             if (!player?.inRoom) return;
 
@@ -273,7 +284,27 @@ class ModularGameServer extends EventEmitter {
             startGameLocks.set(player.inRoom, true);
 
             try {
-                this.roomManager.startGame(player.inRoom);
+                // Check if this is a casino game and prepare balances
+                const gameDefinition = this.registry.get(room.gameId);
+                const isCasinoGame = gameDefinition?.isCasino || false;
+                let initialBalances = {};
+
+                if (isCasinoGame && this.profileService) {
+                    // Get balances for all players in the room
+                    const players = room.playerManager.list();
+                    for (const p of players) {
+                        // Try to get balance from profile
+                        if (p.account) {
+                            const balance = this.profileService.getBalance(p.account);
+                            initialBalances[p.id] = balance !== null ? balance : 1000;
+                        } else {
+                            // Guest or no account, use default
+                            initialBalances[p.id] = 1000;
+                        }
+                    }
+                }
+
+                this.roomManager.startGame(player.inRoom, { initialBalances });
             } catch (error) {
                 socket.emit('error', error.message);
             } finally {
@@ -358,11 +389,11 @@ class ModularGameServer extends EventEmitter {
                     // For multi-player games (3+ players), just notify and continue
                     if (roomAfterLeave) {
                         this.io.to(roomId).emit('playerLeft', 'A player has exited the game.');
-                        this.io.to(roomId).emit('roomStateUpdate', roomAfterLeave.toJSON());
+                        this.io.to(roomId).emit('roomStateUpdate', this._enrichRoomData(roomAfterLeave));
                     }
                 }
             } else if (roomAfterLeave) {
-                this.io.to(roomId).emit('roomStateUpdate', roomAfterLeave.toJSON());
+                this.io.to(roomId).emit('roomStateUpdate', this._enrichRoomData(roomAfterLeave));
                 if (disconnect) {
                     this.io.to(roomId).emit('playerLeft', 'A player has disconnected.');
                 }
@@ -372,18 +403,49 @@ class ModularGameServer extends EventEmitter {
         }
     }
 
+    _enrichRoomData(room) {
+        const roomData = room.toJSON();
+        const gameDefinition = this.registry.get(room.gameId);
+        const isCasinoGame = gameDefinition?.isCasino || false;
+
+        roomData.isCasino = isCasinoGame;
+        roomData.gameType = room.gameId;
+
+        // Add balances to players if it's a casino game
+        if (isCasinoGame && this.profileService && roomData.players) {
+            Object.keys(roomData.players).forEach(playerId => {
+                const player = roomData.players[playerId];
+                if (player.account) {
+                    const balance = this.profileService.getBalance(player.account);
+                    player.balance = balance !== null ? balance : 1000;
+                } else {
+                    player.balance = 1000; // Default for guests
+                }
+            });
+        }
+
+        return roomData;
+    }
+
     notifyRoomUpdate(roomId) {
         const room = this.roomManager.getRoom(roomId);
         if (!room) {
             return;
         }
-        this.io.to(roomId).emit('roomStateUpdate', room.toJSON());
+        this.io.to(roomId).emit('roomStateUpdate', this._enrichRoomData(room));
         this.io.emit('updateRoomList', this._serializeRooms());
     }
 
     _wirePluginEvents() {
         const broadcast = () => {
-            this.io.emit('availableGames', this.registry.list().map(({ id, name, minPlayers, maxPlayers }) => ({ id, name, minPlayers, maxPlayers })));
+            this.io.emit('availableGames', this.registry.list().map(({ id, name, minPlayers, maxPlayers, category, isCasino }) => ({
+                id,
+                name,
+                minPlayers,
+                maxPlayers,
+                category: category || 'other',
+                isCasino: isCasino || false
+            })));
         };
         this.pluginManager.on('pluginLoaded', broadcast);
         this.pluginManager.on('pluginUnloaded', broadcast);

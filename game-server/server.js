@@ -48,21 +48,14 @@ const server = http.createServer(app);
 const io = new Server(server);
 const DEFAULT_PORT = 8081;
 let activePort = null;
-const modularGameServer = createModularGameServer({
-    io,
-    logger: console,
-    pluginDirectory: path.join(__dirname, 'src/plugins'),
-});
+let modularGameServer = null; // Will be initialized after profileService
 
 const emitOpenRoomsUpdate = () => {
+    if (!modularGameServer) return;
     const openRooms = getOpenRooms();
     console.log('Broadcasting updated room list to clients. Count:', Object.keys(openRooms).length);
     io.emit('updateRoomList', openRooms);
 };
-
-modularGameServer.roomManager.on('roomCreated', emitOpenRoomsUpdate);
-modularGameServer.roomManager.on('roomUpdated', emitOpenRoomsUpdate);
-modularGameServer.roomManager.on('roomRemoved', emitOpenRoomsUpdate);
 
 function emitSocketError({ socket, player, action, error, message = 'Operation failed. Please try again.', code = 'OPERATION_FAILED' }) {
     const context = {
@@ -248,16 +241,31 @@ modularGameServer.resourceMonitor.on('metrics', (snapshot) => {
     });
 });
 
-modularGameServer.roomManager.on('roundEnd', async ({ seriesWinnerId, winnerId }) => {
-    // Support both seriesWinnerId (for series-based games) and winnerId (for single game wins)
-    const actualWinnerId = seriesWinnerId || winnerId;
-    if (!actualWinnerId) {
-        return;
-    }
-    try {
-        await recordSeriesWin(actualWinnerId);
-    } catch (error) {
-        console.warn('Failed to record series win:', error);
+modularGameServer.roomManager.on('roundEnd', async (data) => {
+    const { seriesWinnerId, winnerId, winners, winnings, roomId } = data;
+
+    // Check if this is a casino game
+    const room = modularGameServer.roomManager.getRoom(roomId);
+    const isCasinoGame = room && modularGameServer.registry.get(room.gameId)?.isCasino;
+
+    if (isCasinoGame && winnings) {
+        // Handle casino game - update balances and stats
+        try {
+            await handleCasinoGameEnd(winnings, roomId, data);
+        } catch (error) {
+            console.warn('Failed to handle casino game end:', error);
+        }
+    } else {
+        // Handle regular game - record wins
+        const actualWinnerId = seriesWinnerId || winnerId;
+        if (!actualWinnerId) {
+            return;
+        }
+        try {
+            await recordSeriesWin(actualWinnerId);
+        } catch (error) {
+            console.warn('Failed to record series win:', error);
+        }
     }
 });
 
@@ -409,6 +417,18 @@ const profileService = createProfileService({
     logger: console,
 });
 profileService.initialize();
+
+// Initialize modularGameServer after profileService
+modularGameServer = createModularGameServer({
+    io,
+    logger: console,
+    pluginDirectory: path.join(__dirname, 'src/plugins'),
+    profileService,
+});
+
+modularGameServer.roomManager.on('roomCreated', emitOpenRoomsUpdate);
+modularGameServer.roomManager.on('roomUpdated', emitOpenRoomsUpdate);
+modularGameServer.roomManager.on('roomRemoved', emitOpenRoomsUpdate);
 
 const guestSessionManager = new GuestSessionManager({
     filePath: path.join(DATA_DIR, 'guest-sessions.json'),
@@ -1775,6 +1795,55 @@ async function recordSeriesWin(winnerSocketId) {
         await incrementUserWins(participant.account);
     } else if (participant.guestId) {
         guestSessionManager.recordWin(participant.guestId);
+    }
+}
+
+async function handleCasinoGameEnd(winnings, roomId, gameData) {
+    // winnings is an object with playerId -> winnings amount (can be negative for losses)
+    const room = modularGameServer.roomManager.getRoom(roomId);
+    if (!room) {
+        console.warn('Room not found for casino game end:', roomId);
+        return;
+    }
+
+    const gameId = room.gameId;
+
+    for (const [playerId, winAmount] of Object.entries(winnings)) {
+        const socket = io.sockets.sockets.get(playerId);
+        if (!socket) continue;
+
+        const participant = players.get(socket);
+        if (!participant || !participant.account) continue;
+
+        try {
+            // Update balance
+            await profileService.updateBalance(participant.account, winAmount);
+
+            // Update casino stats
+            const statsUpdate = {
+                gamesPlayed: 1,
+                gameId,
+                gamePlayed: true
+            };
+
+            if (winAmount > 0) {
+                statsUpdate.handsWon = 1;
+                statsUpdate.totalWinnings = winAmount;
+                statsUpdate.gameWon = true;
+                statsUpdate.gameWinnings = winAmount;
+            } else if (winAmount < 0) {
+                statsUpdate.handsLost = 1;
+                statsUpdate.totalLosses = Math.abs(winAmount);
+                statsUpdate.gameLost = true;
+                statsUpdate.gameLosses = Math.abs(winAmount);
+            }
+
+            await profileService.updateCasinoStats(participant.account, statsUpdate);
+
+            console.log(`Updated casino stats for ${participant.account}: ${winAmount > 0 ? 'won' : 'lost'} $${Math.abs(winAmount)}`);
+        } catch (error) {
+            console.error(`Failed to update casino stats for player ${playerId}:`, error);
+        }
     }
 }
 

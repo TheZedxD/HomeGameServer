@@ -191,6 +191,14 @@ class ProfileService {
             record.avatarPath = updates.avatarPath;
             mutated = true;
         }
+        if (Object.prototype.hasOwnProperty.call(updates, 'balance') && Number.isFinite(Number(updates.balance))) {
+            record.balance = Number(updates.balance);
+            mutated = true;
+        }
+        if (Object.prototype.hasOwnProperty.call(updates, 'casinoStats')) {
+            record.casinoStats = updates.casinoStats;
+            mutated = true;
+        }
 
         if (mutated) {
             await this.writeStore(store);
@@ -234,6 +242,139 @@ class ProfileService {
         void this._setCacheEntry(key, record);
         this.analytics.record('avatarUpload', { username: key });
         return previousPath || null;
+    }
+
+    async updateBalance(username, amount) {
+        const key = String(username || '').toLowerCase();
+        if (!key) {
+            return null;
+        }
+        const store = this.readStore();
+        if (!store.users[key]) {
+            return null;
+        }
+
+        // Initialize balance if it doesn't exist
+        if (store.users[key].balance === undefined) {
+            store.users[key].balance = 1000; // Default starting balance
+        }
+
+        store.users[key].balance = Number(store.users[key].balance) + Number(amount || 0);
+        const newBalance = store.users[key].balance;
+
+        await this.writeStore(store);
+        void this._setCacheEntry(key, store.users[key]);
+        this.analytics.record('balanceUpdate', { username: key, amount, newBalance });
+
+        return newBalance;
+    }
+
+    async getCasinoStats(username) {
+        const key = String(username || '').toLowerCase();
+        if (!key) {
+            return null;
+        }
+        const profile = this.getProfile(key);
+        if (!profile) {
+            return null;
+        }
+
+        // Initialize casino stats if they don't exist
+        if (!profile.casinoStats) {
+            profile.casinoStats = {
+                gamesPlayed: 0,
+                handsWon: 0,
+                handsLost: 0,
+                totalWinnings: 0,
+                totalLosses: 0,
+                biggestWin: 0,
+                biggestLoss: 0,
+                byGame: {}
+            };
+        }
+
+        return profile.casinoStats;
+    }
+
+    async updateCasinoStats(username, updates) {
+        const key = String(username || '').toLowerCase();
+        if (!key) {
+            return null;
+        }
+        const store = this.readStore();
+        if (!store.users[key]) {
+            return null;
+        }
+
+        // Initialize casino stats if they don't exist
+        if (!store.users[key].casinoStats) {
+            store.users[key].casinoStats = {
+                gamesPlayed: 0,
+                handsWon: 0,
+                handsLost: 0,
+                totalWinnings: 0,
+                totalLosses: 0,
+                biggestWin: 0,
+                biggestLoss: 0,
+                byGame: {}
+            };
+        }
+
+        const stats = store.users[key].casinoStats;
+
+        // Update stats
+        if (updates.gamesPlayed) stats.gamesPlayed += updates.gamesPlayed;
+        if (updates.handsWon) stats.handsWon += updates.handsWon;
+        if (updates.handsLost) stats.handsLost += updates.handsLost;
+        if (updates.totalWinnings) {
+            stats.totalWinnings += updates.totalWinnings;
+            if (updates.totalWinnings > stats.biggestWin) {
+                stats.biggestWin = updates.totalWinnings;
+            }
+        }
+        if (updates.totalLosses) {
+            stats.totalLosses += updates.totalLosses;
+            if (updates.totalLosses > stats.biggestLoss) {
+                stats.biggestLoss = updates.totalLosses;
+            }
+        }
+
+        // Update per-game stats
+        if (updates.gameId) {
+            if (!stats.byGame[updates.gameId]) {
+                stats.byGame[updates.gameId] = {
+                    played: 0,
+                    won: 0,
+                    lost: 0,
+                    winnings: 0,
+                    losses: 0
+                };
+            }
+            const gameStats = stats.byGame[updates.gameId];
+            if (updates.gamePlayed) gameStats.played += 1;
+            if (updates.gameWon) gameStats.won += 1;
+            if (updates.gameLost) gameStats.lost += 1;
+            if (updates.gameWinnings) gameStats.winnings += updates.gameWinnings;
+            if (updates.gameLosses) gameStats.losses += updates.gameLosses;
+        }
+
+        await this.writeStore(store);
+        void this._setCacheEntry(key, store.users[key]);
+        this.analytics.record('casinoStatsUpdate', { username: key });
+
+        return stats;
+    }
+
+    getBalance(username) {
+        const profile = this.getProfile(username);
+        if (!profile) {
+            return null;
+        }
+        // Initialize balance if it doesn't exist
+        if (profile.balance === undefined) {
+            return 1000; // Default starting balance
+        }
+        return profile.balance;
     }
 
     async upsert(username, payload) {
