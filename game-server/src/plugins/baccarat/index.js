@@ -277,31 +277,33 @@ function initializeGame({ playerOrder, initialBalances }) {
 /**
  * Register the game plugin
  */
-module.exports = (registry) => {
-  registry.register({
-    id: 'baccarat',
-    name: 'Baccarat',
-    description: 'Classic casino card game - bet on Player, Banker, or Tie!',
-    category: 'casino',
-    isCasino: true,
-    minPlayers: 1,
-    maxPlayers: 8,
-    minBet: 10,
-    maxBet: 1000,
-    create({ roomId, players, initialBalances }) {
-      const instance = buildGameInstance({
-        gameId: 'baccarat',
-        initialState: initializeGame({
-          playerOrder: players.map(p => p.id),
-          initialBalances
-        })
-      });
+module.exports = {
+  register: (registry) => {
+    return registry.register({
+      id: 'baccarat',
+      name: 'Baccarat',
+      description: 'Classic casino card game - bet on Player, Banker, or Tie!',
+      category: 'casino',
+      isCasino: true,
+      minPlayers: 1,
+      maxPlayers: 8,
+      minBet: 10,
+      maxBet: 1000,
+      create({ roomId, players, initialBalances }) {
+        const instance = buildGameInstance({
+          gameId: 'baccarat',
+          initialState: initializeGame({
+            playerOrder: players.map(p => p.id),
+            initialBalances
+          })
+        });
 
-      // Register strategies
-      instance.registerStrategy('placeBet', new BaccaratBetStrategy());
-      instance.registerStrategy('vote', new VotingStrategy());
+        // Register strategies
+        instance.registerStrategy('placeBet', new BaccaratBetStrategy());
+        instance.registerStrategy('vote', new VotingStrategy());
 
-      return instance;
-    }
-  });
+        return instance;
+      }
+    });
+  }
 };
