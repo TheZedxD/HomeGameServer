@@ -23,21 +23,32 @@
                 <div class="title-bar">
                     <span class="title-bar-text">Game Hub Control Center</span>
                     <div class="title-bar-controls">
-                        <button type="button" class="title-bar-btn" aria-label="Minimize">_</button>
-                        <button type="button" class="title-bar-btn" aria-label="Maximize">□</button>
-                        <button type="button" class="title-bar-btn" aria-label="Close">×</button>
+                        <button type="button" class="title-bar-btn" aria-label="Minimize" tabindex="-1">_</button>
+                        <button type="button" class="title-bar-btn" aria-label="Maximize" tabindex="-1">□</button>
+                        <button type="button" class="title-bar-btn" aria-label="Close" tabindex="-1">×</button>
                     </div>
                 </div>
                 <div class="window-body">
-                    <p class="intro-text">A lightweight, local-first platform for classic games with authentic Windows 2000 styling.</p>
-                    <nav class="win2k-nav" aria-label="Primary">
-                        <div class="win2k-nav__item"><a class="win2k-nav__link" href="#main-lobby" aria-current="page">Lobby</a></div>
-                        <div class="win2k-nav__item"><a class="win2k-nav__link" href="#match-lobby">Match Setup</a></div>
-                        <div class="win2k-nav__item"><a class="win2k-nav__link" href="#game-ui">Game Session</a></div>
-                    </nav>
+                    <h1 class="intro-text">Welcome to Game Hub</h1>
+                    <p class="tagline">A lightweight, local-first platform for classic games with authentic Windows 2000 styling.</p>
                 </div>
             </div>
         </header>
+
+        <aside class="lobby-list" aria-label="Available games">
+            <div class="window" style="height: 100%;">
+                <div class="title-bar">
+                    <span class="title-bar-text">Available LAN Games</span>
+                </div>
+                <div class="window-body lobby-body">
+                    <div class="classic-sunken lobby-scroll">
+                        <div id="room-list">
+                            <p class="text-muted">No open games found. Create one!</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
 
         <main class="left-panels">
             <section id="main-lobby" class="window" aria-labelledby="main-lobby-title">
@@ -45,14 +56,11 @@
                     <span class="title-bar-text" id="main-lobby-title">Player Setup &amp; Quick Actions</span>
                 </div>
                 <div class="window-body">
-                    <h1 class="app-title">Game Hub</h1>
-                    <p class="tagline">Welcome to the modernized retro experience.</p>
-
                     <p id="name-greeting" class="name-greeting">Welcome, <span id="player-name-preview">Guest</span>!</p>
 
                     <div class="identity-cta" aria-live="polite">
-                    <p class="identity-cta__description">Open your profile preferences to update your display name, avatar, and account.</p>
-                    <button id="open-identity-overlay-btn" class="btn btn-secondary" type="button">Open Profile Preferences</button>
+                        <p class="identity-cta__description">Open your profile preferences to update your display name, avatar, and account.</p>
+                        <button id="open-identity-overlay-btn" class="btn btn-secondary" type="button">Open Profile Preferences</button>
                     </div>
 
                     <div class="window-section classic-raised" aria-labelledby="p2p-title">
@@ -144,21 +152,6 @@
                 </div>
             </section>
         </main>
-
-        <aside class="lobby-list" aria-label="Available games">
-            <div class="window" style="height: 100%;">
-                <div class="title-bar">
-                    <span class="title-bar-text">Available LAN Games</span>
-                </div>
-                <div class="window-body lobby-body">
-                    <div class="classic-sunken lobby-scroll">
-                        <div id="room-list">
-                            <p class="text-muted">No open games found. Create one!</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </aside>
 
         <footer class="footer" role="contentinfo">
             <div class="window">
