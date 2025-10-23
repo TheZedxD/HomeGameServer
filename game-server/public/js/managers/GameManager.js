@@ -59,6 +59,24 @@ const DEFAULT_GAME_METADATA = {
     maxPlayers: 9,
     category: 'casino',
     isCasino: true
+  },
+  '5-card-stud': {
+    id: '5-card-stud',
+    name: '5 Card Stud',
+    description: 'Classic stud poker - bet on visible cards!',
+    minPlayers: 2,
+    maxPlayers: 8,
+    category: 'casino',
+    isCasino: true
+  },
+  baccarat: {
+    id: 'baccarat',
+    name: 'Baccarat',
+    description: 'Classic casino card game - bet on Player, Banker, or Tie!',
+    minPlayers: 1,
+    maxPlayers: 8,
+    category: 'casino',
+    isCasino: true
   }
 };
 
@@ -81,7 +99,9 @@ export class GameManager {
       DEFAULT_GAME_METADATA.war,
       DEFAULT_GAME_METADATA.hearts,
       DEFAULT_GAME_METADATA.blackjack,
-      DEFAULT_GAME_METADATA['texas-holdem']
+      DEFAULT_GAME_METADATA['texas-holdem'],
+      DEFAULT_GAME_METADATA['5-card-stud'],
+      DEFAULT_GAME_METADATA.baccarat
     ]);
 
     this.uiManager.setRoomJoinHandler((roomId) => this.joinGame(roomId));
