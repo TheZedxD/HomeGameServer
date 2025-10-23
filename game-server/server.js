@@ -221,54 +221,6 @@ const {
     GUEST_SESSION_SECRET,
 } = loadSecrets();
 
-modularGameServer.resourceMonitor.on('metrics', (snapshot) => {
-    metricsCollector.updateGameMetrics({
-        rooms: snapshot.rooms,
-        players: snapshot.players,
-        activeGames: snapshot.activeGames,
-    });
-    const fallback = collectResourceSnapshot();
-    const system = snapshot.system || {};
-    metricsCollector.updateResourceSnapshot({
-        memory: {
-            rss: system.rss ?? fallback.memory.rss,
-            heapTotal: system.heapTotal ?? fallback.memory.heapTotal,
-            heapUsed: system.heapUsed ?? fallback.memory.heapUsed,
-            external: system.external ?? fallback.memory.external,
-        },
-        cpuLoad: [system.cpuLoad ?? fallback.cpuLoad[0]],
-        uptime: fallback.uptime,
-    });
-});
-
-modularGameServer.roomManager.on('roundEnd', async (data) => {
-    const { seriesWinnerId, winnerId, winners, winnings, roomId } = data;
-
-    // Check if this is a casino game
-    const room = modularGameServer.roomManager.getRoom(roomId);
-    const isCasinoGame = room && modularGameServer.registry.get(room.gameId)?.isCasino;
-
-    if (isCasinoGame && winnings) {
-        // Handle casino game - update balances and stats
-        try {
-            await handleCasinoGameEnd(winnings, roomId, data);
-        } catch (error) {
-            console.warn('Failed to handle casino game end:', error);
-        }
-    } else {
-        // Handle regular game - record wins
-        const actualWinnerId = seriesWinnerId || winnerId;
-        if (!actualWinnerId) {
-            return;
-        }
-        try {
-            await recordSeriesWin(actualWinnerId);
-        } catch (error) {
-            console.warn('Failed to record series win:', error);
-        }
-    }
-});
-
 const DATA_DIR = path.join(__dirname, 'data');
 const USER_DATA_FILE = path.join(DATA_DIR, 'users.json');
 const UPLOAD_DIR = path.join(__dirname, 'public/uploads/profiles');
@@ -429,6 +381,56 @@ modularGameServer = createModularGameServer({
 modularGameServer.roomManager.on('roomCreated', emitOpenRoomsUpdate);
 modularGameServer.roomManager.on('roomUpdated', emitOpenRoomsUpdate);
 modularGameServer.roomManager.on('roomRemoved', emitOpenRoomsUpdate);
+
+// Set up resource monitoring event listener
+modularGameServer.resourceMonitor.on('metrics', (snapshot) => {
+    metricsCollector.updateGameMetrics({
+        rooms: snapshot.rooms,
+        players: snapshot.players,
+        activeGames: snapshot.activeGames,
+    });
+    const fallback = collectResourceSnapshot();
+    const system = snapshot.system || {};
+    metricsCollector.updateResourceSnapshot({
+        memory: {
+            rss: system.rss ?? fallback.memory.rss,
+            heapTotal: system.heapTotal ?? fallback.memory.heapTotal,
+            heapUsed: system.heapUsed ?? fallback.memory.heapUsed,
+            external: system.external ?? fallback.memory.external,
+        },
+        cpuLoad: [system.cpuLoad ?? fallback.cpuLoad[0]],
+        uptime: fallback.uptime,
+    });
+});
+
+// Set up round end event listener for game completion
+modularGameServer.roomManager.on('roundEnd', async (data) => {
+    const { seriesWinnerId, winnerId, winners, winnings, roomId } = data;
+
+    // Check if this is a casino game
+    const room = modularGameServer.roomManager.getRoom(roomId);
+    const isCasinoGame = room && modularGameServer.registry.get(room.gameId)?.isCasino;
+
+    if (isCasinoGame && winnings) {
+        // Handle casino game - update balances and stats
+        try {
+            await handleCasinoGameEnd(winnings, roomId, data);
+        } catch (error) {
+            console.warn('Failed to handle casino game end:', error);
+        }
+    } else {
+        // Handle regular game - record wins
+        const actualWinnerId = seriesWinnerId || winnerId;
+        if (!actualWinnerId) {
+            return;
+        }
+        try {
+            await recordSeriesWin(actualWinnerId);
+        } catch (error) {
+            console.warn('Failed to record series win:', error);
+        }
+    }
+});
 
 const guestSessionManager = new GuestSessionManager({
     filePath: path.join(DATA_DIR, 'guest-sessions.json'),
