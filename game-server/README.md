@@ -4,10 +4,55 @@ This project is a lightweight, self-hosted web server for playing classic multip
 
 ## Features
 
-- 🎮 Two-player Checkers matches that play as a best-of-three series with automatic round resets.
-- 🧑‍🤝‍🧑 Personalized player display names that sync to match lobbies and scoreboards on every client.
-- 📊 Live score tracking that updates in real time after every round, including the final match banner.
-- 🖥️ Responsive lobby UI that highlights player readiness and host controls for starting a game.
+- 🎮 **Multiple Game Types** - Board games, card games, and casino games with betting
+- 🧑‍🤝‍🧑 **Multiplayer Support** - 1-9 players depending on game type
+- 📊 **Live Score Tracking** - Real-time updates after every round
+- 🎰 **Casino System** - Full betting mechanics with balance tracking across games
+- 🃏 **Card Game Engine** - Shared utilities for deck management and hand evaluation
+- 🗳️ **Post-Game Voting** - Players vote to play again or return to lobby (majority rules)
+- 🎨 **Themed UI** - Consistent visual style with card symbols (♥ ♦ ♣ ♠) and casino emojis
+- 🖥️ **Responsive Lobby** - Player readiness indicators and host controls
+- 💾 **Profile System** - Persistent player accounts with avatar support
+- 🔐 **Authentication** - Secure login with JWT tokens and session management
+
+## Games
+
+### Board Games
+- **Checkers** (2 players) - Classic strategy game with best-of-three series
+- **Tic-Tac-Toe** (2 players) - Quick 3×3 matches
+
+### Card Games
+- **War** (2 players) - Simple highest-card-wins game
+- **Hearts** (4 players) - Trick-taking game, avoid hearts and the Queen of Spades
+
+### Casino Games 🎰
+All casino games feature:
+- Betting system with configurable chip amounts (10-1000 chips)
+- Balance tracking across games
+- Professional casino UI with green felt theme
+- Start/end animations with winner displays
+- Post-game voting system
+
+**Available Casino Games:**
+- **Blackjack** (1-7 players) - Beat the dealer, get closest to 21
+  - Hit, Stand, Double actions
+  - 6-deck shoe with automatic dealer play
+  - Natural blackjack pays 3:2
+
+- **Texas Hold'em** (2-9 players) - Classic poker with community cards
+  - Pre-flop, Flop, Turn, River betting rounds
+  - Call, Raise, Check, Fold, All-in actions
+  - Best 5-card hand from 7 cards wins
+
+- **5 Card Stud** (2-8 players) - Classic stud poker with visible cards
+  - 1 hole card + 4 face-up cards
+  - 5 streets of betting (First, Third, Fourth, Fifth, Showdown)
+  - Highest visible card acts first each round
+
+- **Baccarat** (1-8 players) - Player vs Banker betting
+  - Bet on Player (1:1), Banker (0.95:1), or Tie (8:1)
+  - Automatic third-card rules
+  - Hand values calculated modulo 10
 
 ## Setup
 

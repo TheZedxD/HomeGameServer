@@ -1,5 +1,6 @@
 import { CheckersScene } from '../components/CheckersScene.js';
 import { CardGameScene } from '../components/CardGameScene.js';
+import { CasinoGameScene } from '../components/CasinoGameScene.js';
 import { DEFAULT_GUEST_NAME } from './ProfileManager.js';
 import { ErrorHandler } from '../utils/ErrorHandler.js';
 
@@ -40,6 +41,42 @@ const DEFAULT_GAME_METADATA = {
     minPlayers: 4,
     maxPlayers: 4,
     category: 'cards'
+  },
+  blackjack: {
+    id: 'blackjack',
+    name: 'Blackjack',
+    description: 'Beat the dealer - get closest to 21!',
+    minPlayers: 1,
+    maxPlayers: 7,
+    category: 'casino',
+    isCasino: true
+  },
+  'texas-holdem': {
+    id: 'texas-holdem',
+    name: 'Texas Hold\'em',
+    description: 'Classic poker - make the best 5-card hand!',
+    minPlayers: 2,
+    maxPlayers: 9,
+    category: 'casino',
+    isCasino: true
+  },
+  '5-card-stud': {
+    id: '5-card-stud',
+    name: '5 Card Stud',
+    description: 'Classic stud poker - bet on visible cards!',
+    minPlayers: 2,
+    maxPlayers: 8,
+    category: 'casino',
+    isCasino: true
+  },
+  baccarat: {
+    id: 'baccarat',
+    name: 'Baccarat',
+    description: 'Classic casino card game - bet on Player, Banker, or Tie!',
+    minPlayers: 1,
+    maxPlayers: 8,
+    category: 'casino',
+    isCasino: true
   }
 };
 
@@ -60,7 +97,11 @@ export class GameManager {
       DEFAULT_GAME_METADATA.checkers,
       DEFAULT_GAME_METADATA['tic-tac-toe'],
       DEFAULT_GAME_METADATA.war,
-      DEFAULT_GAME_METADATA.hearts
+      DEFAULT_GAME_METADATA.hearts,
+      DEFAULT_GAME_METADATA.blackjack,
+      DEFAULT_GAME_METADATA['texas-holdem'],
+      DEFAULT_GAME_METADATA['5-card-stud'],
+      DEFAULT_GAME_METADATA.baccarat
     ]);
 
     this.uiManager.setRoomJoinHandler((roomId) => this.joinGame(roomId));
@@ -322,7 +363,15 @@ export class GameManager {
     const gameType = this.activeGameId;
     const gameMetadata = DEFAULT_GAME_METADATA[gameType];
 
-    if (gameMetadata?.category === 'cards') {
+    if (gameMetadata?.category === 'casino') {
+      // Use CasinoGameScene for casino games (blackjack, poker, etc.)
+      this.gameInstance = new CasinoGameScene({
+        ...config,
+        playerId: this.myPlayerId,
+        gameType: gameType,
+        containerId: 'game-container'
+      });
+    } else if (gameMetadata?.category === 'cards') {
       // Use CardGameScene for card games
       this.gameInstance = new CardGameScene({
         ...config,
