@@ -16,4 +16,6 @@ module.exports = {
     ResourceMonitor: require('./resourceMonitor'),
     InMemoryGameRepository: require('./repositories/inMemoryGameRepository'),
     BettingManager: require('./bettingManager').BettingManager,
+    VotingManager: require('./votingManager').VotingManager,
+    VotingStrategy: require('./votingStrategy').VotingStrategy,
 };

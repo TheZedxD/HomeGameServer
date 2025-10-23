@@ -4,7 +4,7 @@
  * Players: 2-9
  */
 
-const { buildGameInstance } = require('../../core');
+const { buildGameInstance, VotingStrategy } = require('../../core');
 const { BettingManager } = require('../../core/bettingManager');
 const { createDeck, shuffle, getCardDisplayName } = require('../war/cardUtils');
 const { evaluateHand, determineWinners } = require('./pokerUtils');
@@ -301,7 +301,8 @@ module.exports = {
             _bettingManager: bettingManager
           },
           strategies: {
-            bet: new BetStrategy()
+            bet: new BetStrategy(),
+            vote: new VotingStrategy()
           }
         });
 

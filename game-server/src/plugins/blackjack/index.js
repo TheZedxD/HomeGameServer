@@ -4,7 +4,7 @@
  * Players: 1-7 (vs dealer)
  */
 
-const { buildGameInstance } = require('../../core');
+const { buildGameInstance, VotingStrategy } = require('../../core');
 const { BettingManager } = require('../../core/bettingManager');
 const { createDeck, shuffle, getCardDisplayName } = require('../war/cardUtils');
 
@@ -398,7 +398,8 @@ module.exports = {
           },
           strategies: {
             placeBet: new PlaceBetStrategy(),
-            action: new PlayerActionStrategy()
+            action: new PlayerActionStrategy(),
+            vote: new VotingStrategy()
           }
         });
 

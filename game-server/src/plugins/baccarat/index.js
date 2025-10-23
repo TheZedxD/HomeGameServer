@@ -4,7 +4,7 @@
  * Players: 1-8 (all betting on same hand)
  */
 
-const { buildGameInstance } = require('../../core');
+const { buildGameInstance, VotingStrategy } = require('../../core');
 const { BettingManager } = require('../../core/bettingManager');
 const { createDeck, shuffle } = require('../war/cardUtils');
 
@@ -297,8 +297,9 @@ module.exports = (registry) => {
         })
       });
 
-      // Register strategy
+      // Register strategies
       instance.registerStrategy('placeBet', new BaccaratBetStrategy());
+      instance.registerStrategy('vote', new VotingStrategy());
 
       return instance;
     }

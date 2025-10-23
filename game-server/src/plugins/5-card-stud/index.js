@@ -4,7 +4,7 @@
  * Players: 2-8
  */
 
-const { buildGameInstance } = require('../../core');
+const { buildGameInstance, VotingStrategy } = require('../../core');
 const { BettingManager } = require('../../core/bettingManager');
 const { createDeck, shuffle, getCardDisplayName } = require('../war/cardUtils');
 const { evaluateHand, determineWinners } = require('../texas-holdem/pokerUtils');
@@ -336,8 +336,9 @@ module.exports = (registry) => {
         })
       });
 
-      // Register strategy
+      // Register strategies
       instance.registerStrategy('pokerAction', new PokerBetStrategy());
+      instance.registerStrategy('vote', new VotingStrategy());
 
       return instance;
     }
