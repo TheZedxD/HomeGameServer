@@ -12,41 +12,76 @@ export function createLobbyUI(elements, toast, modalManager) {
 
   function renderRoomList(openRooms = []) {
     const target = lobby.roomList;
-    if (!target) return;
+    const modalTarget = document.getElementById('modal-room-list');
     const rooms = Array.isArray(openRooms) ? openRooms : Object.values(openRooms);
-    if (!rooms.length) {
-      target.innerHTML = '<p style="color: var(--text-secondary);">No open games found. Create one!</p>';
-      return;
+
+    const emptyMessage = '<p class="text-muted" style="margin: 0;">No open games found. Create one!</p>';
+
+    // Render to sidebar (if exists)
+    if (target) {
+      if (!rooms.length) {
+        target.innerHTML = emptyMessage;
+      } else {
+        target.innerHTML = '';
+        rooms.forEach((room) => {
+          target.appendChild(createRoomItem(room));
+        });
+      }
     }
 
-    target.innerHTML = '';
-    rooms.forEach((room) => {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'room-item';
+    // Render to modal
+    if (modalTarget) {
+      if (!rooms.length) {
+        modalTarget.innerHTML = emptyMessage;
+      } else {
+        modalTarget.innerHTML = '';
+        rooms.forEach((room) => {
+          modalTarget.appendChild(createRoomItem(room));
+        });
+      }
+    }
+  }
 
-      const details = document.createElement('div');
-      details.innerHTML = `
-        <p style="color: var(--text-primary); margin: 0; font-weight: 600;">${room.gameType}</p>
-        <p style="color: var(--text-secondary); margin: 0; font-size: 0.9rem;">${room.roomId}</p>
-      `;
+  function createRoomItem(room) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'room-item';
+    wrapper.style.display = 'grid';
+    wrapper.style.gridTemplateColumns = '1fr auto';
+    wrapper.style.gap = 'var(--space-3)';
+    wrapper.style.alignItems = 'center';
 
-      const actions = document.createElement('div');
-      actions.style.textAlign = 'right';
-      actions.innerHTML = `
-        <p style="color: var(--text-primary); margin: 0; font-weight: 600;">${room.playerCount}/${room.maxPlayers}</p>
-      `;
+    const details = document.createElement('div');
+    details.innerHTML = `
+      <p style="margin: 0; font-weight: 600; font-size: 11px;">${room.gameType}</p>
+      <p style="margin: 0; font-size: 9px; color: var(--win2k-muted);">${room.roomId}</p>
+    `;
 
-      const joinButton = document.createElement('button');
-      joinButton.className = 'btn btn-primary';
-      joinButton.type = 'button';
-      joinButton.textContent = 'Join';
-      joinButton.addEventListener('click', () => joinHandler?.(room.roomId));
-      actions.appendChild(joinButton);
+    const actions = document.createElement('div');
+    actions.style.textAlign = 'right';
+    actions.innerHTML = `
+      <p style="margin: 0 0 var(--space-1) 0; font-weight: 600; font-size: 10px;">${room.playerCount}/${room.maxPlayers}</p>
+    `;
 
-      wrapper.appendChild(details);
-      wrapper.appendChild(actions);
-      target.appendChild(wrapper);
+    const joinButton = document.createElement('button');
+    joinButton.className = 'btn btn-primary';
+    joinButton.type = 'button';
+    joinButton.textContent = 'Join';
+    joinButton.style.minWidth = '60px';
+    joinButton.style.fontSize = '9px';
+    joinButton.style.padding = 'var(--space-1) var(--space-2)';
+    joinButton.addEventListener('click', () => {
+      joinHandler?.(room.roomId);
+      // Close modal if open
+      const modal = document.getElementById('available-games-modal');
+      if (modal && !modal.classList.contains('hidden')) {
+        modal.classList.add('hidden');
+      }
     });
+    actions.appendChild(joinButton);
+
+    wrapper.appendChild(details);
+    wrapper.appendChild(actions);
+    return wrapper;
   }
 
   function populateGameSelection(availableGames = [], onSelect) {
@@ -62,10 +97,11 @@ export function createLobbyUI(elements, toast, modalManager) {
     if (casinoGames.length > 0) {
       const casinoHeader = document.createElement('h4');
       casinoHeader.textContent = 'Casino Games';
-      casinoHeader.style.color = 'var(--text-primary)';
+      casinoHeader.style.color = 'var(--win2k-text)';
       casinoHeader.style.marginTop = '0';
-      casinoHeader.style.marginBottom = '10px';
-      casinoHeader.style.fontSize = '1.1rem';
+      casinoHeader.style.marginBottom = 'var(--space-2)';
+      casinoHeader.style.fontSize = '11px';
+      casinoHeader.style.fontWeight = 'bold';
       list.appendChild(casinoHeader);
 
       casinoGames.forEach((game) => {
@@ -89,10 +125,11 @@ export function createLobbyUI(elements, toast, modalManager) {
     if (regularGames.length > 0) {
       const regularHeader = document.createElement('h4');
       regularHeader.textContent = 'Card & Board Games';
-      regularHeader.style.color = 'var(--text-primary)';
-      regularHeader.style.marginTop = casinoGames.length > 0 ? '20px' : '0';
-      regularHeader.style.marginBottom = '10px';
-      regularHeader.style.fontSize = '1.1rem';
+      regularHeader.style.color = 'var(--win2k-text)';
+      regularHeader.style.marginTop = casinoGames.length > 0 ? 'var(--space-4)' : '0';
+      regularHeader.style.marginBottom = 'var(--space-2)';
+      regularHeader.style.fontSize = '11px';
+      regularHeader.style.fontWeight = 'bold';
       list.appendChild(regularHeader);
 
       regularGames.forEach((game) => {
@@ -114,6 +151,31 @@ export function createLobbyUI(elements, toast, modalManager) {
   }
 
   function bindLobbyControls({ availableGames = [], onReady, onStartGame, onCreateGame, onJoinGame }) {
+    // Available games modal handlers
+    const showAvailableGamesBtn = document.getElementById('show-available-games-btn');
+    const availableGamesModal = document.getElementById('available-games-modal');
+    const closeAvailableGamesBtn = document.getElementById('close-available-games-btn');
+    const closeAvailableGamesModalBtn = document.getElementById('close-available-games-modal-btn');
+
+    showAvailableGamesBtn?.addEventListener('click', () => {
+      availableGamesModal?.classList.remove('hidden');
+    });
+
+    closeAvailableGamesBtn?.addEventListener('click', () => {
+      availableGamesModal?.classList.add('hidden');
+    });
+
+    closeAvailableGamesModalBtn?.addEventListener('click', () => {
+      availableGamesModal?.classList.add('hidden');
+    });
+
+    // Close modal on backdrop click
+    availableGamesModal?.addEventListener('click', (e) => {
+      if (e.target === availableGamesModal) {
+        availableGamesModal.classList.add('hidden');
+      }
+    });
+
     lobby.createGameButton?.addEventListener('click', () => {
       if (modalManager && modals.createGame) {
         modalManager.openModal(modals.createGame, lobby.createGameButton);

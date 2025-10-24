@@ -75,7 +75,8 @@
 
   body {
     margin: 0;
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     font-family: var(--font-body);
     line-height: var(--line-height-base);
     background: linear-gradient(
@@ -85,7 +86,6 @@
       var(--win2k-desktop-blue-darker) 100%
     );
     color: var(--win2k-text);
-    padding-bottom: var(--space-4);
     overscroll-behavior: none;
   }
 
@@ -142,12 +142,13 @@
 @layer layout {
   .app-container {
     display: grid;
-    gap: var(--space-4);
-    padding: var(--space-4);
+    gap: var(--space-2);
+    padding: var(--space-2);
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr auto;
     container: layout-shell / inline-size;
-    min-height: calc(100vh - var(--space-5) * 2);
+    height: 100vh;
+    overflow: hidden;
   }
 
   .header {
@@ -155,25 +156,59 @@
   }
 
   .header .window-body {
-    padding: var(--space-4);
+    padding: var(--space-3);
+  }
+
+  .header .intro-text {
+    font-size: 14px;
+    margin: 0;
+  }
+
+  .header .tagline {
+    font-size: 10px;
+    margin: 0;
   }
 
   .left-panels {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--space-2);
     container: panel-stack / inline-size;
     grid-auto-flow: row;
     align-content: start;
+    overflow: hidden;
+    min-height: 0;
   }
 
   .lobby-list {
-    display: grid;
-    grid-template-rows: subgrid;
+    display: none;
+  }
+
+  .lobby-list-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: var(--z-modal);
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-4);
+    backdrop-filter: blur(2px);
+  }
+
+  .lobby-list-modal.hidden {
+    display: none;
+  }
+
+  .lobby-list-modal:not(.hidden) {
+    display: flex;
   }
 
   .footer {
     grid-column: 1 / -1;
-    margin-top: var(--space-3);
+    font-size: 10px;
+  }
+
+  .footer .window-body {
+    padding: var(--space-2) var(--space-3);
   }
 
   .auth-body {
@@ -193,37 +228,7 @@
     width: min(420px, 92vw);
   }
 
-  @container layout-shell (min-width: 58rem) {
-    .app-container {
-      grid-template-columns: minmax(320px, 2fr) minmax(0, 1fr);
-      grid-template-rows: auto 1fr auto;
-    }
-
-    .lobby-list {
-      grid-row: 2;
-      grid-column: 1;
-      align-self: stretch;
-    }
-
-    .left-panels {
-      grid-row: 2;
-      grid-column: 2;
-      grid-template-columns: 1fr;
-      align-items: start;
-    }
-  }
-
-  @container layout-shell (min-width: 75rem) {
-    .app-container {
-      grid-template-columns: minmax(400px, 2.2fr) minmax(0, 1fr);
-    }
-  }
-
-  @container panel-stack (min-width: 52rem) {
-    .match-controls {
-      justify-content: flex-start;
-    }
-  }
+  /* Removed responsive sidebar - everything uses single column now */
 
   @container panel-stack (max-width: 36rem) {
     .name-row,
@@ -238,11 +243,11 @@
     }
 
     .window-section {
-      padding: var(--space-4);
+      padding: var(--space-2);
     }
 
     .identity-cta {
-      padding: var(--space-4);
+      padding: var(--space-2);
     }
   }
 }
@@ -269,17 +274,17 @@
     background: linear-gradient(90deg, var(--win2k-title-gradient-start), var(--win2k-title-gradient-end));
     color: #ffffff;
     font-weight: bold;
-    padding: var(--space-3) var(--space-4);
+    padding: var(--space-2) var(--space-3);
     display: flex;
     justify-content: space-between;
     align-items: center;
     line-height: 1.2;
-    gap: var(--space-3);
-    min-height: 32px;
+    gap: var(--space-2);
+    min-height: 24px;
   }
 
   .title-bar-text {
-    font-size: 12px;
+    font-size: 11px;
   }
 
   .title-bar-controls {
@@ -311,21 +316,21 @@
 
   .window-body {
     background: var(--win2k-control-face);
-    padding: var(--space-4);
+    padding: var(--space-3);
     border: 1px solid var(--win2k-window-frame);
     display: grid;
-    gap: var(--space-4);
+    gap: var(--space-3);
   }
 
   .intro-text {
     margin: 0;
-    font-size: 18px;
+    font-size: 14px;
     font-weight: bold;
   }
 
   .app-title {
     font-family: var(--font-heading);
-    font-size: 24px;
+    font-size: 16px;
     margin: 0;
   }
 
@@ -337,7 +342,7 @@
 
   .name-greeting {
     margin: 0;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: bold;
   }
 
@@ -347,11 +352,11 @@
 
   .identity-cta {
     display: grid;
-    gap: var(--space-3);
+    gap: var(--space-2);
     align-items: start;
     background: var(--surface-elevated);
     border: 2px inset var(--win2k-control-face);
-    padding: var(--space-5);
+    padding: var(--space-3);
     border-radius: var(--radius-sm);
     box-shadow: var(--shadow-sunken);
   }
@@ -359,18 +364,19 @@
   .identity-cta__description {
     margin: 0;
     color: var(--win2k-muted);
+    font-size: 10px;
   }
 
   .profile-corner {
     position: fixed;
-    top: var(--space-4);
-    right: var(--space-4);
+    top: var(--space-2);
+    right: var(--space-2);
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
     width: max-content;
-    max-width: calc(100vw - var(--space-5) * 2);
+    max-width: calc(100vw - var(--space-4) * 2);
     background: var(--surface-elevated);
     border: 2px outset var(--win2k-control-face);
     z-index: var(--z-profile);
@@ -410,8 +416,8 @@
   }
 
   .profile-avatar {
-    width: 48px;
-    height: 48px;
+    width: 32px;
+    height: 32px;
     border: 1px inset var(--win2k-border-mid);
     background: #ffffff;
     object-fit: cover;
@@ -425,37 +431,43 @@
 
   .profile-stats {
     display: grid;
-    gap: var(--space-1);
+    gap: 0;
+    font-size: 10px;
   }
 
   .profile-name {
     font-weight: bold;
+    font-size: 11px;
+  }
+
+  .profile-meta {
+    font-size: 9px;
   }
 
   .profile-corner__hint {
-    font-size: 10px;
+    font-size: 8px;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.05em;
     color: var(--win2k-muted);
-    padding: 2px 6px;
+    padding: 1px 4px;
     border: 1px inset var(--win2k-border-mid);
     background: var(--surface-panel);
     border-radius: var(--radius-sm);
   }
 
   .window-section {
-    padding: var(--space-5);
+    padding: var(--space-3);
     margin: 0;
     background: var(--surface-panel);
     box-shadow: var(--shadow-raised);
     display: grid;
-    gap: var(--space-3);
+    gap: var(--space-2);
     border-radius: var(--radius-sm);
   }
 
   .window-section h2 {
     margin: 0;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: bold;
     color: var(--win2k-text);
   }
@@ -463,8 +475,8 @@
   .window-section p {
     margin: 0;
     color: var(--win2k-muted);
-    font-size: 11px;
-    line-height: 1.5;
+    font-size: 10px;
+    line-height: 1.4;
   }
 
   .name-row,
@@ -472,19 +484,19 @@
   .input-row,
   .match-controls {
     display: flex;
-    gap: var(--space-3);
+    gap: var(--space-2);
     flex-wrap: wrap;
   }
 
   .input-field {
-    flex: 1 1 160px;
-    min-width: 140px;
-    padding: var(--space-3) var(--space-3);
+    flex: 1 1 140px;
+    min-width: 120px;
+    padding: var(--space-2) var(--space-3);
     border: 2px inset var(--win2k-control-face);
     background: #ffffff;
     color: var(--win2k-text);
     transition: border-color var(--transition-snappy) ease;
-    font-size: 11px;
+    font-size: 10px;
   }
 
   .input-field:focus {
@@ -500,13 +512,13 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: var(--space-2) var(--space-5);
-    min-height: 28px;
-    min-width: 96px;
+    padding: var(--space-2) var(--space-4);
+    min-height: 24px;
+    min-width: 80px;
     border: none;
     cursor: pointer;
     font-family: inherit;
-    font-size: 11px;
+    font-size: 10px;
     color: var(--win2k-text);
     background: var(--win2k-button-face);
     box-shadow: var(--shadow-raised);
@@ -561,9 +573,9 @@
 
   .match-lobby {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: var(--space-4);
-    padding: var(--space-4);
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: var(--space-3);
+    padding: var(--space-3);
     margin: 0;
     background: var(--surface-panel);
     box-shadow: var(--shadow-sunken);
@@ -571,11 +583,11 @@
   }
 
   .player-card {
-    padding: var(--space-4);
+    padding: var(--space-3);
     background: var(--surface-panel);
     box-shadow: var(--shadow-raised);
     border-radius: var(--radius-sm);
-    min-height: 80px;
+    min-height: 60px;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -583,11 +595,13 @@
 
   .player-name {
     font-weight: bold;
-    margin: 0 0 var(--space-2);
+    margin: 0 0 var(--space-1);
+    font-size: 11px;
   }
 
   .status {
     margin: 0;
+    font-size: 10px;
   }
 
   .status.not-ready {
@@ -602,47 +616,56 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-4);
-    padding: var(--space-4);
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
     background: var(--surface-panel);
     box-shadow: var(--shadow-raised);
     border-radius: var(--radius-sm);
+    font-size: 10px;
   }
 
   #game-info-bar h2 {
     margin: 0;
-    font-size: 16px;
+    font-size: 12px;
+  }
+
+  #game-info-bar p {
+    margin: 0;
+    font-size: 10px;
   }
 
   .scoreboard {
-    padding: var(--space-4);
+    padding: var(--space-2) var(--space-3);
     background: var(--surface-panel);
     box-shadow: var(--shadow-raised);
     border-radius: var(--radius-sm);
     text-align: center;
+    font-size: 10px;
   }
 
   .game-stage {
     display: grid;
     place-items: center;
-    padding: var(--space-5);
+    padding: var(--space-3);
     background: var(--surface-panel);
     box-shadow: var(--shadow-raised);
     border-radius: var(--radius-sm);
-    gap: var(--space-4);
+    gap: var(--space-2);
+    overflow: hidden;
   }
 
   #game-container {
-    width: min(var(--game-board-max), 100%);
+    width: min(60vmin, 480px);
     aspect-ratio: var(--game-board-ratio);
     display: grid;
     place-items: center;
     background: #ffffff;
-    padding: var(--space-3);
+    padding: var(--space-2);
     box-shadow: var(--shadow-sunken);
     position: relative;
     margin: 0 auto;
-    contain: strict;
+    contain: layout;
+    overflow: hidden;
   }
 
   .checkers-board {
@@ -717,43 +740,55 @@
   }
 
   .game-stage__meta {
-    font-size: 12px;
+    font-size: 9px;
     color: var(--win2k-muted);
     text-align: center;
+    margin: 0;
   }
 
   .lobby-body {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
+    gap: var(--space-2);
     height: 100%;
-    min-height: 400px;
-    max-height: calc(100vh - 200px);
+    overflow: hidden;
   }
 
   .lobby-scroll {
     flex: 1;
-    padding: var(--space-4);
-    overflow-y: auto;
+    padding: var(--space-3);
+    overflow: hidden;
     background: #ffffff;
     box-shadow: var(--shadow-sunken);
-    scroll-behavior: smooth;
-    overscroll-behavior: contain;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 
   #room-list {
     display: grid;
-    gap: var(--space-3);
+    gap: var(--space-2);
+    overflow: hidden;
   }
 
   .room-item {
-    padding: var(--space-4);
+    padding: var(--space-3);
     background: var(--surface-panel);
     box-shadow: var(--shadow-raised);
     border-radius: var(--radius-sm);
     cursor: pointer;
     transition: all var(--transition-snappy) ease;
+    font-size: 10px;
+  }
+
+  .room-item h3 {
+    margin: 0 0 var(--space-1) 0;
+    font-size: 11px;
+  }
+
+  .room-item p {
+    margin: 0;
+    font-size: 9px;
   }
 
   .room-item:hover {
@@ -816,9 +851,10 @@
     align-items: center;
     justify-content: center;
     z-index: var(--z-modal);
-    padding: var(--space-5);
+    padding: var(--space-3);
     contain: layout paint;
     backdrop-filter: blur(2px);
+    overflow: hidden;
   }
 
   .identity-overlay {
@@ -833,52 +869,59 @@
   }
 
   .modal-content {
-    width: min(540px, 100%);
+    width: min(480px, 100%);
+    max-height: calc(100vh - var(--space-4) * 2);
     background: var(--surface-elevated);
     box-shadow: var(--shadow-raised);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .modal-body {
-    padding: var(--space-5);
+    padding: var(--space-3);
     display: grid;
-    gap: var(--space-4);
+    gap: var(--space-3);
+    overflow: hidden;
   }
 
   .identity-modal {
-    max-width: 520px;
+    max-width: 440px;
   }
 
   .identity-modal__body {
-    gap: var(--space-4);
+    gap: var(--space-3);
+    overflow: hidden;
   }
 
   .identity-modal__actions {
     justify-content: flex-end;
-    gap: var(--space-3);
+    gap: var(--space-2);
     flex-wrap: wrap;
   }
 
   .profile-preferences {
     display: grid;
-    gap: var(--space-5);
+    gap: var(--space-3);
+    overflow: hidden;
   }
 
   .profile-preferences__header {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--space-3);
     align-items: center;
     grid-template-columns: auto 1fr;
   }
 
   .profile-preferences__avatar {
     display: grid;
-    gap: var(--space-3);
+    gap: var(--space-2);
     justify-items: center;
   }
 
   .profile-preferences__summary {
     display: grid;
-    gap: var(--space-2);
+    gap: var(--space-1);
   }
 
   .profile-preferences__name {
@@ -893,14 +936,19 @@
 
   .identity-modal__section {
     display: grid;
-    gap: var(--space-3);
-    padding: var(--space-4);
+    gap: var(--space-2);
+    padding: var(--space-3);
     background: var(--surface-panel);
     border: 2px inset var(--win2k-control-face);
   }
 
   .identity-modal__section h3 {
     margin: 0;
+    font-size: 12px;
+  }
+
+  .identity-modal__section p {
+    font-size: 10px;
   }
 
   .identity-modal__actions--account {
@@ -926,10 +974,15 @@
 
   .selection-list {
     display: grid;
-    gap: var(--space-3);
-    max-height: 400px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    gap: var(--space-2);
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    overflow: hidden;
+    padding: var(--space-2);
+  }
+
+  .selection-list .btn {
+    min-height: 40px;
+    font-size: 10px;
     padding: var(--space-2);
   }
 
@@ -1135,12 +1188,27 @@
 
   .match-controls {
     align-items: center;
-    margin-top: var(--space-3);
+    margin-top: 0;
+    gap: var(--space-2);
   }
 
   #game-over-message .modal-content {
     text-align: center;
-    gap: var(--space-4);
+    gap: var(--space-3);
+  }
+
+  #game-over-message h1 {
+    font-size: 16px;
+    margin: var(--space-3) 0;
+  }
+
+  .window-heading {
+    font-size: 14px;
+    margin: 0;
+  }
+
+  #match-lobby-gametype {
+    font-size: 14px;
   }
 
   #avatar-upload-input {
@@ -1267,40 +1335,39 @@
   @media (max-width: 48rem) {
     .profile-corner {
       position: static;
-      margin: var(--space-4) auto;
-      width: min(100%, 320px);
-    }
-
-    .profile-dropdown {
-      position: static;
-      margin-top: var(--space-2);
-      width: 100%;
+      margin: var(--space-2) auto;
+      width: min(100%, 280px);
     }
 
     .app-container {
-      padding: var(--space-3);
-      gap: var(--space-3);
+      padding: var(--space-2);
+      gap: var(--space-2);
     }
 
     .lobby-body {
-      min-height: 300px;
-      max-height: 400px;
+      overflow: hidden;
     }
 
     .window-body {
-      padding: var(--space-3);
+      padding: var(--space-2);
+      gap: var(--space-2);
     }
 
     .modal-body {
-      padding: var(--space-4);
+      padding: var(--space-2);
     }
 
     .title-bar {
-      padding: var(--space-2) var(--space-3);
+      padding: var(--space-1) var(--space-2);
+      min-height: 20px;
+    }
+
+    .title-bar-text {
+      font-size: 10px;
     }
 
     .game-stage {
-      padding: var(--space-4);
+      padding: var(--space-2);
     }
   }
 
