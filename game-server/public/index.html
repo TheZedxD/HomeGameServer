@@ -76,7 +76,10 @@
                     <div class="window-section classic-raised" aria-labelledby="lan-title">
                         <h2 id="lan-title">Play on Local WiFi</h2>
                         <p>Create or join a game with others on the same network.</p>
-                        <button id="show-create-game-modal-btn" class="btn btn-primary" type="button">Create New LAN Game</button>
+                        <div class="input-row">
+                            <button id="show-available-games-btn" class="btn btn-secondary" type="button">View Available Games</button>
+                            <button id="show-create-game-modal-btn" class="btn btn-primary" type="button">Create New Game</button>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -244,6 +247,27 @@
                 <div class="modal-actions">
                     <button id="prompt-edit-profile-btn" class="btn btn-primary" type="button">Edit Profile</button>
                     <button id="prompt-dismiss-btn" class="btn" type="button">Maybe Later</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="available-games-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="available-games-title" tabindex="-1">
+        <div class="modal-content classic-raised" style="max-width: 600px;">
+            <div class="title-bar">
+                <span class="title-bar-text" id="available-games-title">Available LAN Games</span>
+                <div class="title-bar-controls">
+                    <button type="button" class="title-bar-btn" id="close-available-games-btn" aria-label="Close available games">×</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="lobby-scroll" style="max-height: 400px; overflow-y: auto;">
+                    <div id="modal-room-list">
+                        <p class="text-muted">No open games found. Create one!</p>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button id="close-available-games-modal-btn" class="btn" type="button">Close</button>
                 </div>
             </div>
         </div>
