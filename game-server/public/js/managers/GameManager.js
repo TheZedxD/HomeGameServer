@@ -110,7 +110,8 @@ export class GameManager {
       onReady: () => this.socket.emit('playerReady'),
       onStartGame: () => this.socket.emit('startGame'),
       onCreateGame: (game) => this.createGame(game),
-      onJoinGame: (roomCode) => this.joinGame(roomCode)
+      onJoinGame: (roomCode) => this.joinGame(roomCode),
+      onLeaveRoom: () => this.leaveGame()
     });
 
     this.setupSocketListeners();

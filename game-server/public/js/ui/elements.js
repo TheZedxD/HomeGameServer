@@ -28,7 +28,8 @@ export function cacheElements() {
       player2Card: document.getElementById('player2-card'),
       player2Status: document.getElementById('player2-status'),
       readyButton: document.getElementById('ready-btn'),
-      startGameButton: document.getElementById('start-game-btn')
+      startGameButton: document.getElementById('start-game-btn'),
+      leaveRoomButton: document.getElementById('leave-room-btn')
     },
     identity: {
       overlay: document.getElementById('identity-overlay'),
