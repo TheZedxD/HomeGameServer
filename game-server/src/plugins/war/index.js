@@ -204,7 +204,7 @@ module.exports = {
 
         // Initialize players
         players.forEach((player, index) => {
-          game.getPlayerManager().add(player);
+          game.playerManager.add(player);
           const state = game.getState();
           state.hands[player.id] = hands[index] || [];
           state.playedCards[player.id] = null;
@@ -224,7 +224,7 @@ module.exports = {
         }
 
         // Listen for round end
-        game.getStateManager().on('stateChanged', ({ current }) => {
+        game.stateManager.on('stateChanged', ({ current }) => {
           if (current.isComplete && current.gameWinnerId) {
             game.emit('roundEnd', {
               round: current.round,
