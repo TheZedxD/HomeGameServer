@@ -150,7 +150,7 @@ export function createLobbyUI(elements, toast, modalManager) {
     }
   }
 
-  function bindLobbyControls({ availableGames = [], onReady, onStartGame, onCreateGame, onJoinGame }) {
+  function bindLobbyControls({ availableGames = [], onReady, onStartGame, onCreateGame, onJoinGame, onLeaveRoom }) {
     // Available games modal handlers
     const showAvailableGamesBtn = document.getElementById('show-available-games-btn');
     const availableGamesModal = document.getElementById('available-games-modal');
@@ -193,6 +193,8 @@ export function createLobbyUI(elements, toast, modalManager) {
     });
 
     matchLobby.readyButton?.addEventListener('click', () => onReady?.());
+
+    matchLobby.leaveRoomButton?.addEventListener('click', () => onLeaveRoom?.());
 
     let startGamePending = false;
     matchLobby.startGameButton?.addEventListener('click', () => {
@@ -298,8 +300,9 @@ export function createLobbyUI(elements, toast, modalManager) {
     if (myPlayerId === room.hostId) {
       matchLobby.startGameButton.classList.remove('hidden');
       const allReady = Object.values(room.players).every((player) => player?.isReady);
-      const roomFull = Object.keys(room.players).length === room.maxPlayers;
-      matchLobby.startGameButton.disabled = !(allReady && roomFull);
+      const playerCount = Object.keys(room.players).length;
+      const minPlayersMet = playerCount >= (room.minPlayers || 2);
+      matchLobby.startGameButton.disabled = !(allReady && minPlayersMet);
     } else {
       matchLobby.startGameButton.classList.add('hidden');
     }
