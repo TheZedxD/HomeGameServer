@@ -351,6 +351,7 @@ module.exports = {
                     minPlayers: 2,
                     maxPlayers: 2,
                     initialState: {
+                        gameType: 'tic-tac-toe',
                         roomId,
                         board: createEmptyBoard(),
                         turn: null,

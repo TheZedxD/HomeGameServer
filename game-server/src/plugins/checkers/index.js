@@ -534,6 +534,7 @@ module.exports = {
                         const startingPlayerId = initialOrder[0] || null;
                         const startingColor = startingPlayerId ? initialPlayersMap?.[startingPlayerId]?.color || null : null;
                         return {
+                        gameType: 'checkers',
                         roomId,
                         board: createInitialBoard(),
                         turn: startingPlayerId,
