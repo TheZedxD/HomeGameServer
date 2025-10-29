@@ -58,11 +58,20 @@ export class CheckersScene {
     this.canvas.addEventListener('click', this.handleBoardClick);
 
     this.render();
+    this.animate();
 
     if (this.pendingAnnouncement) {
       this.showAnnouncement(this.pendingAnnouncement);
       this.pendingAnnouncement = null;
     }
+  }
+
+  /**
+   * Animation loop for continuous rendering
+   */
+  animate() {
+    this.render();
+    this.animationFrameId = requestAnimationFrame(() => this.animate());
   }
 
   render() {
@@ -250,6 +259,11 @@ export class CheckersScene {
   }
 
   destroy() {
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+
     if (this.announcementTimeout) {
       clearTimeout(this.announcementTimeout);
       this.announcementTimeout = null;

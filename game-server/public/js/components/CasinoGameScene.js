@@ -1115,7 +1115,7 @@ export class CasinoGameScene {
   handleButtonClick(button) {
     switch (button.action) {
       case 'hit':
-        this.socket.emit('submitMove', {
+        this.socket?.emit('submitMove', {
           type: 'playerAction',
           playerId: this.playerId,
           payload: { action: 'hit' }
@@ -1123,7 +1123,7 @@ export class CasinoGameScene {
         break;
 
       case 'stand':
-        this.socket.emit('submitMove', {
+        this.socket?.emit('submitMove', {
           type: 'playerAction',
           playerId: this.playerId,
           payload: { action: 'stand' }
@@ -1131,7 +1131,7 @@ export class CasinoGameScene {
         break;
 
       case 'double':
-        this.socket.emit('submitMove', {
+        this.socket?.emit('submitMove', {
           type: 'playerAction',
           playerId: this.playerId,
           payload: { action: 'double' }
@@ -1139,7 +1139,7 @@ export class CasinoGameScene {
         break;
 
       case 'fold':
-        this.socket.emit('submitMove', {
+        this.socket?.emit('submitMove', {
           type: 'pokerAction',
           playerId: this.playerId,
           payload: { action: 'fold' }
@@ -1147,7 +1147,7 @@ export class CasinoGameScene {
         break;
 
       case 'check':
-        this.socket.emit('submitMove', {
+        this.socket?.emit('submitMove', {
           type: 'pokerAction',
           playerId: this.playerId,
           payload: { action: 'check' }
@@ -1155,7 +1155,7 @@ export class CasinoGameScene {
         break;
 
       case 'call':
-        this.socket.emit('submitMove', {
+        this.socket?.emit('submitMove', {
           type: 'pokerAction',
           playerId: this.playerId,
           payload: { action: 'call' }
@@ -1166,7 +1166,7 @@ export class CasinoGameScene {
         // For now, use minimum raise
         const bettingManager = this.gameState._bettingManager;
         const minRaise = bettingManager?.minRaise || 10;
-        this.socket.emit('submitMove', {
+        this.socket?.emit('submitMove', {
           type: 'pokerAction',
           playerId: this.playerId,
           payload: { action: 'raise', amount: minRaise }
@@ -1174,7 +1174,7 @@ export class CasinoGameScene {
         break;
 
       case 'allIn':
-        this.socket.emit('submitMove', {
+        this.socket?.emit('submitMove', {
           type: 'pokerAction',
           playerId: this.playerId,
           payload: { action: 'allIn' }
@@ -1189,7 +1189,7 @@ export class CasinoGameScene {
       case 'placeBet':
         const betAmount = parseInt(this.betInput) || 0;
         if (betAmount > 0) {
-          this.socket.emit('submitMove', {
+          this.socket?.emit('submitMove', {
             type: 'placeBet',
             playerId: this.playerId,
             payload: { amount: betAmount }
@@ -1204,7 +1204,7 @@ export class CasinoGameScene {
         const baccaratBet = parseInt(this.betInput) || 0;
         if (baccaratBet > 0) {
           const betType = button.action.replace('bet', '').toLowerCase();
-          this.socket.emit('submitMove', {
+          this.socket?.emit('submitMove', {
             type: 'placeBet',
             playerId: this.playerId,
             payload: { amount: baccaratBet, betType }
@@ -1215,7 +1215,7 @@ export class CasinoGameScene {
 
       case 'voteNewGame':
         this.playerVote = 'newGame';
-        this.socket.emit('submitMove', {
+        this.socket?.emit('submitMove', {
           type: 'vote',
           playerId: this.playerId,
           payload: { vote: 'newGame' }
@@ -1225,7 +1225,7 @@ export class CasinoGameScene {
 
       case 'voteLobby':
         this.playerVote = 'lobby';
-        this.socket.emit('submitMove', {
+        this.socket?.emit('submitMove', {
           type: 'vote',
           playerId: this.playerId,
           payload: { vote: 'lobby' }
@@ -1472,9 +1472,7 @@ export class CasinoGameScene {
    * Animation loop
    */
   animate() {
-    if (this.animations.length > 0) {
-      this.render();
-    }
+    this.render();
     requestAnimationFrame(() => this.animate());
   }
 

@@ -472,13 +472,13 @@ export class CardGameScene {
 
     // Emit play card event based on game type
     if (this.gameState.gameType === 'war') {
-      this.socket.emit('submitMove', {
+      this.socket?.emit('submitMove', {
         type: 'playCard',
         playerId: this.playerId
       });
       this.selectedCard = null;
     } else if (this.gameState.gameType === 'hearts') {
-      this.socket.emit('submitMove', {
+      this.socket?.emit('submitMove', {
         type: 'playCard',
         playerId: this.playerId,
         payload: { cardId: card.id }
@@ -564,9 +564,7 @@ export class CardGameScene {
    * Animation loop
    */
   animate() {
-    if (this.animations.length > 0) {
-      this.render();
-    }
+    this.render();
     requestAnimationFrame(() => this.animate());
   }
 
