@@ -153,6 +153,7 @@
 
   .header {
     grid-column: 1 / -1;
+    position: relative;
   }
 
   .header .window-body {
@@ -383,26 +384,19 @@
     contain: layout paint;
     cursor: pointer;
     transition: box-shadow var(--transition-snappy) ease;
+    pointer-events: auto;
   }
 
   @media (max-width: 768px) {
     .profile-corner {
-      position: relative;
-      top: auto;
-      right: auto;
-      margin: var(--space-3) auto;
+      position: static;
+      margin: var(--space-2) auto var(--space-3);
       max-width: 100%;
       z-index: var(--z-base);
     }
 
     .lobby-list {
       margin-top: 0;
-    }
-  }
-
-  @media (max-width: 1024px) {
-    .profile-corner {
-      z-index: var(--z-dropdown);
     }
   }
 
@@ -804,31 +798,39 @@
   .status-body {
     display: flex;
     align-items: center;
-    gap: var(--space-4);
+    gap: var(--space-3);
     flex-wrap: wrap;
+    justify-content: space-between;
   }
 
   .status-message {
-    flex: 1;
-    min-width: 200px;
+    flex: 0 1 auto;
+    min-width: 150px;
   }
 
   .network-info {
     margin-left: auto;
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-end;
+    align-items: center;
     justify-content: flex-end;
     gap: var(--space-2);
-    font-size: 12px;
-    color: var(--win2k-muted);
+    font-size: 11px;
+    font-weight: bold;
+    color: var(--win2k-text);
     text-align: right;
     line-height: 1.4;
     min-width: 200px;
+    padding: var(--space-2);
+    background: var(--surface-panel);
+    border: 1px solid var(--win2k-border-mid);
+    border-radius: var(--radius-sm);
   }
 
   .network-info span {
     white-space: nowrap;
+    color: var(--win2k-title-gradient-end);
+    font-family: 'Courier New', monospace;
   }
 
   .status-indicator {
@@ -1333,11 +1335,7 @@
 
 @layer media {
   @media (max-width: 48rem) {
-    .profile-corner {
-      position: static;
-      margin: var(--space-2) auto;
-      width: min(100%, 280px);
-    }
+    /* Profile corner responsive behavior already handled at 768px breakpoint */
 
     .app-container {
       padding: var(--space-2);

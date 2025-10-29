@@ -52,9 +52,15 @@ let modularGameServer = null; // Will be initialized after profileService
 
 const emitOpenRoomsUpdate = () => {
     if (!modularGameServer) return;
-    const openRooms = getOpenRooms();
-    console.log('Broadcasting updated room list to clients. Count:', Object.keys(openRooms).length);
-    io.emit('updateRoomList', openRooms);
+    // Use the gameGateway's room serialization for consistency
+    const rooms = modularGameServer._serializeRooms();
+    const payload = {
+        version: modularGameServer.roomListVersion,
+        rooms: rooms,
+        timestamp: Date.now()
+    };
+    console.log('Broadcasting updated room list to clients. Count:', Object.keys(rooms).length);
+    io.emit('updateRoomList', payload);
 };
 
 function emitSocketError({ socket, player, action, error, message = 'Operation failed. Please try again.', code = 'OPERATION_FAILED' }) {
@@ -1153,7 +1159,13 @@ io.on('connection', (socket) => {
     if (playerState.guestId) {
         guestSessionManager.recordDisplayName(playerState.guestId, playerState.username);
     }
-    socket.emit('updateRoomList', getOpenRooms());
+    // Use the gameGateway's room serialization for consistency
+    const rooms = modularGameServer._serializeRooms();
+    socket.emit('updateRoomList', {
+        version: modularGameServer.roomListVersion,
+        rooms: rooms,
+        timestamp: Date.now()
+    });
 
     const handlers = {
         linkAccount: null,
@@ -1364,7 +1376,13 @@ io.on('connection', (socket) => {
                 player.inRoom = null;
             }
 
-            io.emit('updateRoomList', getOpenRooms());
+            // Use the gameGateway's room serialization for consistency
+            const rooms = modularGameServer._serializeRooms();
+            io.emit('updateRoomList', {
+                version: modularGameServer.roomListVersion,
+                rooms: rooms,
+                timestamp: Date.now()
+            });
         } catch (error) {
             console.error('[Socket] disconnect cleanup failed', {
                 error: error?.message,
@@ -1409,29 +1427,6 @@ function syncPlayerInRoom(socket) {
     modularGameServer.notifyRoomUpdate(room.id);
 }
 
-function getOpenRooms() {
-    const openRooms = {};
-    console.log('Getting open rooms, total rooms:', modularGameServer.roomManager.rooms.size);
-
-    for (const room of modularGameServer.roomManager.rooms.values()) {
-        const playerCount = room.playerManager.players.size;
-        console.log('Room:', room.id, 'Players:', playerCount, 'Max:', room.playerManager.maxPlayers, 'Mode:', room.metadata.mode);
-
-        if (playerCount < room.playerManager.maxPlayers) {
-            openRooms[room.id] = {
-                roomId: room.id,
-                gameType: room.gameId,
-                mode: room.metadata.mode,
-                playerCount,
-                maxPlayers: room.playerManager.maxPlayers,
-                hostId: room.hostId,
-            };
-        }
-    }
-
-    console.log('Open rooms to broadcast:', openRooms);
-    return openRooms;
-}
 
 function instrumentSocketHandlers(socket) {
     const listenerMap = new Map();
