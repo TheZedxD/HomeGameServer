@@ -1,0 +1,142 @@
+version: '3.8'
+
+services:
+  # =============================================================================
+  # HomeGameServer Service
+  # =============================================================================
+  game-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: homegameserver:latest
+    container_name: homegameserver
+    restart: unless-stopped
+
+    # Port mapping
+    ports:
+      - "${PORT:-8081}:8081"
+
+    # Environment variables from .env file
+    env_file:
+      - .env
+
+    # Environment overrides
+    environment:
+      - NODE_ENV=production
+      - PORT=8081
+
+    # Volume mounts for persistence
+    volumes:
+      # User data persistence
+      - ./data:/app/data
+      # Session persistence
+      - ./.sessions:/app/.sessions
+      # Logs (optional)
+      - ./logs:/app/logs
+      # Configuration (optional, if you want to override)
+      # - ./config:/app/config:ro
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8081/healthz', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+    # Network configuration
+    networks:
+      - gamenet
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+
+    # User namespace (non-root)
+    user: "1001:1001"
+
+  # =============================================================================
+  # Redis Service (Optional - for caching and pub/sub)
+  # =============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: homegameserver-redis
+    restart: unless-stopped
+
+    # Redis port
+    ports:
+      - "6379:6379"
+
+    # Redis configuration
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+    # Volume for persistence
+    volumes:
+      - redis-data:/data
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+    # Network configuration
+    networks:
+      - gamenet
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+    # Uncomment to enable Redis if needed
+    profiles:
+      - with-redis
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  gamenet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  redis-data:
+    driver: local

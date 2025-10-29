@@ -1,9 +1,25 @@
-# Local Multiplayer Game Server
+# HomeGameServer - Secure, Server-Authoritative Game Server
 
-This project is a lightweight, self-hosted web server for playing classic multiplayer games over a local network or via P2P.
+A production-ready, self-hosted multiplayer game server with server-authoritative state management, real-time synchronization, and comprehensive observability.
+
+## 🚀 New: Server-Authoritative Architecture
+
+HomeGameServer now features a fully server-authoritative game engine designed for competitive, cheat-resistant gameplay:
+
+- **⚡ High-Performance Tick Loop** - 20-30 Hz server tick rate with p95 latency < 10ms under 200 concurrent clients
+- **🔒 Server Authority** - All game logic runs server-side; clients receive validated state updates only
+- **🎯 Deterministic RNG** - Seeded random generation for reproducible game sessions and fair play
+- **📊 State Machines** - Formal FSM for rooms and players with validated state transitions
+- **✅ Schema Validation** - Zod-based message validation for all Socket.IO events with versioning support
+- **🔄 Delta & Snapshot Sync** - Efficient delta updates every tick + periodic full snapshots for reconciliation
+- **🛡️ Replay Protection** - Sequence number tracking prevents duplicate/out-of-order inputs
+- **📡 Latency Measurement** - Built-in ping/pong for real-time latency monitoring
+- **📈 Production Observability** - Prometheus metrics, structured logging with Pino, health checks
+- **🐳 Docker Ready** - Multi-stage optimized builds with non-root user and health checks
 
 ## Features
 
+### Core Gameplay
 - 🎮 **Multiple Game Types** - Board games, card games, and casino games with betting
 - 🧑‍🤝‍🧑 **Multiplayer Support** - 1-9 players depending on game type
 - 📊 **Live Score Tracking** - Real-time updates after every round
@@ -12,8 +28,15 @@ This project is a lightweight, self-hosted web server for playing classic multip
 - 🗳️ **Post-Game Voting** - Players vote to play again or return to lobby (majority rules)
 - 🎨 **Themed UI** - Consistent visual style with card symbols (♥ ♦ ♣ ♠) and casino emojis
 - 🖥️ **Responsive Lobby** - Player readiness indicators and host controls
+
+### Security & Infrastructure
 - 💾 **Profile System** - Persistent player accounts with avatar support
-- 🔐 **Authentication** - Secure login with JWT tokens and session management
+- 🔐 **Authentication** - Short-lived JWT access tokens + refresh tokens, session management
+- 🛡️ **Rate Limiting** - Per-socket, per-IP, and per-endpoint rate limits with burst support
+- 🔒 **Input Sanitization** - All user inputs validated and sanitized
+- 🚨 **CSP & Security Headers** - Content Security Policy and comprehensive security headers
+- 📝 **Structured Logging** - Pino-based JSON logs with contextual metadata (roomId, playerId, etc.)
+- 📊 **Metrics & Monitoring** - Prometheus-compatible /metrics endpoint with histograms and counters
 
 ## Games
 
@@ -148,6 +171,251 @@ This project targets modern Long-Term Support releases of Node.js (18 or newer) 
   - CachyOS/Linux: `./setup_cachyos.sh`
     - Automatically retries with `npm install` if `npm ci` fails because the packaged lock file is stale.
 
+## Docker Deployment
+
+### Quick Start with Docker Compose
+
+The easiest way to deploy HomeGameServer in production:
+
+```bash
+# 1. Configure environment variables
+cp .env.example .env
+# Edit .env and add your secrets
+
+# 2. Start the server
+docker-compose up -d
+
+# 3. Check health
+curl http://localhost:8081/healthz
+
+# 4. View logs
+docker-compose logs -f game-server
+
+# 5. Stop the server
+docker-compose down
+```
+
+### Building the Docker Image
+
+```bash
+# Build the production image
+docker build -t homegameserver:latest .
+
+# Run with environment variables
+docker run -d \
+  --name homegameserver \
+  -p 8081:8081 \
+  --env-file .env \
+  -v ./data:/app/data \
+  -v ./logs:/app/logs \
+  homegameserver:latest
+```
+
+### With Redis (Optional)
+
+Enable Redis for caching and pub/sub:
+
+```bash
+# Start with Redis profile
+docker-compose --profile with-redis up -d
+
+# Set REDIS_URL in .env
+REDIS_URL=redis://redis:6379
+ENABLE_REDIS_CACHE=true
+```
+
+## Configuration
+
+HomeGameServer uses a comprehensive configuration system with strict validation.
+
+### Required Secrets
+
+Generate strong secrets for production:
+
+```bash
+# Generate 32-byte base64 secrets
+openssl rand -base64 32
+
+# Required in .env:
+SESSION_SECRET=<generated-secret>
+JWT_SECRET=<generated-secret>
+JWT_REFRESH_SECRET=<generated-secret>
+GUEST_SESSION_SECRET=<generated-secret>
+CSRF_SECRET=<generated-secret>
+```
+
+### Key Configuration Options
+
+See `.env.example` for all available options. Key settings:
+
+**Server:**
+- `PORT` - Server port (default: 8081)
+- `ORIGIN_WHITELIST` - Comma-separated CORS origins
+- `NODE_ENV` - Environment: development, production, test
+
+**Game Server:**
+- `TICK_RATE` - Server tick rate in Hz (default: 30, range: 20-60)
+- `SNAPSHOT_RATE` - Snapshot broadcast rate in Hz (default: 10)
+- `DETERMINISTIC_RNG` - Enable reproducible randomness (default: true)
+
+**Security:**
+- `JWT_ACCESS_TOKEN_EXPIRY` - Access token lifetime (default: 15m)
+- `JWT_REFRESH_TOKEN_EXPIRY` - Refresh token lifetime (default: 7d)
+- `ENABLE_SEQUENCE_VALIDATION` - Enable replay protection (default: true)
+- `MAX_SEQUENCE_DRIFT` - Allowed sequence number drift (default: 100)
+
+**Rate Limiting:**
+- `RATE_LIMIT_WRITE_MAX` - HTTP writes/min per IP (default: 300)
+- `SOCKET_EVENT_RATE_LIMIT` - Socket events/sec (default: 80)
+- `SOCKET_CONNECTION_RATE_LIMIT` - Connections/min per IP (default: 120)
+
+**Rooms:**
+- `MAX_PLAYERS_PER_ROOM` - Maximum players (default: 8)
+- `ROOM_IDLE_TIMEOUT_MS` - Idle timeout in ms (default: 30 minutes)
+- `MAX_ROOMS` - Maximum concurrent rooms (default: 100)
+
+**Logging:**
+- `LOG_LEVEL` - Logging level: trace, debug, info, warn, error, fatal
+- `LOG_PRETTY` - Pretty print logs (default: true in dev)
+- `LOG_DIR` - Log directory path (optional)
+
+## Monitoring & Observability
+
+### Health Checks
+
+```bash
+# Basic health check (fast, no auth)
+curl http://localhost:8081/healthz
+
+# Detailed health with component status
+curl http://localhost:8081/health
+```
+
+### Metrics
+
+Access Prometheus-compatible metrics (requires `METRICS_TOKEN` in production):
+
+```bash
+# Set token in .env
+METRICS_TOKEN=your-secure-token-here
+
+# Fetch metrics
+curl -H "Authorization: Bearer your-secure-token-here" \
+  http://localhost:8081/metrics
+```
+
+**Key Metrics:**
+- `tick_duration_ms` - Tick loop performance (histogram)
+- `rooms_active` - Current active rooms (gauge)
+- `players_active` - Current active players (gauge)
+- `game_moves_total` - Total game actions processed (counter)
+- `socket_connections_total` - Total WebSocket connections (counter)
+- `rate_limit_hits_total` - Rate limit violations (counter)
+- `http_request_duration_ms` - HTTP request latency (histogram)
+
+### Structured Logging
+
+Logs are output in JSON format (production) or pretty-printed (development) using Pino:
+
+```json
+{
+  "level": 30,
+  "time": "2025-10-29T17:30:00.000Z",
+  "pid": 1234,
+  "hostname": "game-server",
+  "module": "TickManager",
+  "tick": 15234,
+  "avgDuration": 3.42,
+  "p95": 5.12,
+  "msg": "Tick metrics"
+}
+```
+
+Enable contextual logging with roomId/playerId for debugging.
+
+## Testing
+
+### Run All Tests
+
+```bash
+# Unit + Integration tests
+npm test
+
+# Unit tests only
+npm run test:unit
+
+# Integration tests only
+npm run test:integration
+
+# With coverage report
+npm run test:unit -- --coverage
+```
+
+### Load Testing
+
+```bash
+# Run Artillery load test (200 virtual clients)
+npm run test:load
+
+# Run fuzz tests
+npm run test:fuzz
+```
+
+### CI/CD
+
+GitHub Actions workflow automatically runs on push/PR:
+- Linting and security audit
+- Unit and integration tests
+- Docker image build and security scan
+- Load testing (main branch only)
+
+## API Documentation
+
+See [docs/API.md](../docs/API.md) for comprehensive API documentation including:
+- Socket.IO event schemas
+- REST endpoints
+- Error codes
+- Rate limits
+- Examples
+
+## Performance Targets
+
+- **Tick Rate:** 20-30 Hz
+- **Tick Duration p95:** < 10ms under 200 clients
+- **Latency:** < 100ms within local network
+- **Memory:** Stable under continuous load
+- **CPU:** < 50% under 200 concurrent players
+
+## Troubleshooting
+
+### Server won't start
+
+1. Check that required secrets are set in `.env`
+2. Ensure port 8081 is not already in use: `lsof -i :8081`
+3. Check logs: `docker-compose logs` or view console output
+
+### High tick duration warnings
+
+If you see "Slow tick detected" warnings:
+
+1. Reduce `TICK_RATE` (e.g., from 30 to 20 Hz)
+2. Check system resources (CPU, memory)
+3. Review metrics: `curl http://localhost:8081/metrics`
+4. Enable `DEBUG=true` for verbose logging
+
+### Health check failing
+
+```bash
+# Check server logs
+docker-compose logs game-server
+
+# Manual health check with details
+curl -v http://localhost:8081/health
+
+# Check memory usage
+docker stats homegameserver
+```
+
 ## Maintenance
 
 - Run the helper script to audit and patch dependencies automatically:
@@ -158,6 +426,24 @@ This project targets modern Long-Term Support releases of Node.js (18 or newer) 
 
 ## Security Notes
 
-- Use strong, unique secrets in your `.env` file.
-- Behind HTTPS, ensure `NODE_ENV=production` so cookies are marked `secure`.
-- Restrict `ALLOWED_ORIGINS` to the domains that should access the server APIs.
+- Use strong, unique secrets in your `.env` file (32+ characters minimum)
+- Behind HTTPS, ensure `NODE_ENV=production` so cookies are marked `secure`
+- Restrict `ORIGIN_WHITELIST` to only the domains that should access the server
+- Set `METRICS_TOKEN` to protect the metrics endpoint in production
+- Enable `ENABLE_SEQUENCE_VALIDATION=true` for replay protection
+- Use short-lived access tokens (`JWT_ACCESS_TOKEN_EXPIRY=15m`)
+- Regularly update dependencies: `npm audit fix`
+- Review security headers in `src/security/headers.js`
+- Monitor rate limit hits in metrics: `rate_limit_hits_total`
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Make your changes with tests
+4. Run `npm test` to ensure tests pass
+5. Submit a pull request
+
+## License
+
+See LICENSE file for details.
