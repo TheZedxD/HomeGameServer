@@ -462,6 +462,7 @@ class ModularGameServer extends EventEmitter {
                     mode: room.metadata.mode,
                     playerCount: room.playerManager.players.size,
                     maxPlayers: room.playerManager.maxPlayers,
+                    hostId: room.hostId,
                 };
             }
         }
