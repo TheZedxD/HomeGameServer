@@ -308,7 +308,7 @@ module.exports = {
 
         // Initialize players
         players.forEach((player, index) => {
-          game.getPlayerManager().add(player);
+          game.playerManager.add(player);
           const state = game.getState();
 
           state.hands[player.id] = hands[player.id];
@@ -354,7 +354,7 @@ module.exports = {
         }
 
         // Listen for game completion
-        game.getStateManager().on('stateChanged', ({ current }) => {
+        game.stateManager.on('stateChanged', ({ current }) => {
           if (current.isComplete) {
             const winners = Array.isArray(current.winners) ? current.winners : [current.winnerId];
             const winnings = {};

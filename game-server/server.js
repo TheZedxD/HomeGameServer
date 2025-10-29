@@ -520,14 +520,28 @@ app.use((req, res, next) => {
     next();
 });
 
+const sessionStore = new FileStore({
+    path: SESSION_STORE_DIR,
+    retries: 3,
+    retrytime: 50,
+    ttl: SESSION_TTL_SECONDS,
+    logFn: () => {} // Suppress default logging
+});
+
+// Add error handler for session store to prevent crashes
+sessionStore.on('error', (error) => {
+    // Log EPERM and other file system errors without crashing
+    if (error.code === 'EPERM' || error.code === 'EBUSY' || error.code === 'EACCES') {
+        console.warn('Session store file operation error (this is usually safe to ignore):', error.message);
+    } else {
+        console.error('Session store error:', error);
+    }
+});
+
 const sessionMiddleware = session({
     name: SESSION_COOKIE_NAME,
     secret: SESSION_SECRET,
-    store: new FileStore({
-        path: SESSION_STORE_DIR,
-        retries: 0,
-        ttl: SESSION_TTL_SECONDS,
-    }),
+    store: sessionStore,
     resave: false,
     saveUninitialized: false,
     rolling: true,
@@ -1064,6 +1078,11 @@ app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 app.use((err, req, res, next) => {
     console.error('Server error:', err);
     metricsCollector.recordError(err, { route: req.originalUrl, method: req.method });
+
+    // If headers were already sent, we can't send a response
+    if (res.headersSent) {
+        return next(err);
+    }
 
     if (err && err.code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({ error: 'File too large' });
