@@ -31,6 +31,15 @@ if ($ciExitCode -ne 0) {
     }
 }
 
+Write-Host '[*] Fixing security vulnerabilities...'
+& npm audit fix 2>&1 | Out-Null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host '[*] Security vulnerabilities fixed.'
+}
+else {
+    Write-Host '[*] Some vulnerabilities may remain (this is often normal).'
+}
+
 if (-not (Test-Path '.env')) {
     if (Test-Path '.env.example') {
         Copy-Item '.env.example' '.env'

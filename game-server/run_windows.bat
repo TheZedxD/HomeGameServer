@@ -20,6 +20,14 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo [*] Fixing security vulnerabilities...
+call npm audit fix >nul 2>nul
+if errorlevel 1 (
+  echo [*] Some vulnerabilities may remain (this is often normal^)
+) else (
+  echo [*] Security vulnerabilities fixed.
+)
+
 set "RUN_TESTS_VALUE=%RUN_TESTS%"
 if /I "!RUN_TESTS_VALUE!"=="true" (
   set "TEST_SCRIPT="
@@ -70,14 +78,9 @@ if defined SERVER_IP (
 if not defined SERVER_IP set "SERVER_IP=127.0.0.1"
 
 echo [*] Starting server on :%PORT%
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$port = if ($env:PORT) { $env:PORT } else { '8081' }; ^
-   $npm = Start-Process npm -ArgumentList 'start' -NoNewWindow -PassThru; ^
-   $ip = if ($env:SERVER_IP) { $env:SERVER_IP } else { '127.0.0.1' }; ^
-   Write-Host ('Server running at http://{0}:{1} and http://localhost:{1}' -f $ip, $port); ^
-   Write-Host '[*] Press Ctrl+C to stop the server.'; ^
-   $npm.WaitForExit(); ^
-   exit $npm.ExitCode"
+echo Server running at http://%SERVER_IP%:%PORT% and http://localhost:%PORT%
+echo [*] Press Ctrl+C to stop the server.
+call npm start
 
 if errorlevel 1 (
   echo [!] Server exited with error.
