@@ -134,6 +134,30 @@ class ModularGameServer extends EventEmitter {
             if (!roomId) {
                 return;
             }
+
+            // Update player credits for casino games
+            const room = this.roomManager.getRoom(roomId);
+            if (room && this.profileService) {
+                const gameDefinition = this.registry.get(room.gameId);
+                const isCasinoGame = gameDefinition?.isCasino || false;
+
+                if (isCasinoGame && event.state) {
+                    const players = room.playerManager.list();
+                    const finalBalances = event.state.finalBalances || {};
+
+                    players.forEach(player => {
+                        const username = player.metadata?.username || player.displayName;
+                        const finalBalance = finalBalances[player.id];
+
+                        if (username && typeof finalBalance === 'number') {
+                            // Update the user's credit balance
+                            this.profileService.updateBalance(username, finalBalance);
+                            this.logger.info(`[Credits] Updated ${username} balance to ${finalBalance}`);
+                        }
+                    });
+                }
+            }
+
             this.io.to(roomId).emit('roundEnd', event);
         });
     }
@@ -413,10 +437,10 @@ class ModularGameServer extends EventEmitter {
 
         // Add balances to players if it's a casino game
         if (isCasinoGame && this.profileService && roomData.players) {
-            Object.keys(roomData.players).forEach(playerId => {
-                const player = roomData.players[playerId];
-                if (player.account) {
-                    const balance = this.profileService.getBalance(player.account);
+            roomData.players.forEach(player => {
+                const username = player.metadata?.username || player.displayName;
+                if (username) {
+                    const balance = this.profileService.getBalance(username);
                     player.balance = balance !== null ? balance : 1000;
                 } else {
                     player.balance = 1000; // Default for guests
@@ -484,6 +508,187 @@ class ModularGameServer extends EventEmitter {
         }
 
         return available[0];
+    }
+
+    // Handle methods for server.js compatibility
+    async handleCreateRoom(socket, gameType) {
+        try {
+            const definition = this._resolveGameDefinition(gameType);
+            const room = this.roomManager.createRoom({
+                hostId: socket.id,
+                gameId: definition.id,
+                mode: 'lan',
+                playerLimits: {
+                    minPlayers: definition.minPlayers,
+                    maxPlayers: definition.maxPlayers,
+                },
+                metadata: { mode: 'lan' },
+            });
+
+            await this.roomManager.joinRoom(room.id, {
+                id: socket.id,
+                displayName: socket.username || 'Player',
+                metadata: { username: socket.username },
+                isReady: true,
+            });
+
+            socket.join(room.id);
+
+            return {
+                success: true,
+                roomId: room.id,
+                room: this._enrichRoomData(room),
+            };
+        } catch (error) {
+            this.logger.error('handleCreateRoom failed:', error);
+            return {
+                success: false,
+                error: error.message,
+            };
+        }
+    }
+
+    async handleJoinRoom(socket, roomId) {
+        try {
+            const room = this.roomManager.getRoom(roomId);
+            if (!room) {
+                throw new Error(`Room ${roomId} does not exist.`);
+            }
+
+            await this.roomManager.joinRoom(room.id, {
+                id: socket.id,
+                displayName: socket.username || 'Guest',
+                metadata: { username: socket.username },
+                isReady: false,
+            });
+
+            socket.join(room.id);
+
+            return {
+                success: true,
+                roomId: room.id,
+                room: this._enrichRoomData(room),
+            };
+        } catch (error) {
+            this.logger.error('handleJoinRoom failed:', error);
+            return {
+                success: false,
+                error: error.message,
+            };
+        }
+    }
+
+    handleLeaveRoom(socket) {
+        try {
+            const rooms = Array.from(socket.rooms);
+            for (const roomId of rooms) {
+                if (roomId !== socket.id) {
+                    const room = this.roomManager.getRoom(roomId);
+                    if (room) {
+                        this.roomManager.leaveRoom(roomId, socket.id);
+                        socket.leave(roomId);
+                    }
+                }
+            }
+
+            return { success: true };
+        } catch (error) {
+            this.logger.error('handleLeaveRoom failed:', error);
+            return {
+                success: false,
+                error: error.message,
+            };
+        }
+    }
+
+    handlePlayerReady(socket) {
+        try {
+            const rooms = Array.from(socket.rooms);
+            for (const roomId of rooms) {
+                if (roomId !== socket.id) {
+                    const room = this.roomManager.getRoom(roomId);
+                    if (room) {
+                        room.playerManager.setReady(socket.id, true);
+                        this.io.to(roomId).emit('roomStateUpdate', this._enrichRoomData(room));
+                    }
+                }
+            }
+
+            return { success: true };
+        } catch (error) {
+            this.logger.error('handlePlayerReady failed:', error);
+            return {
+                success: false,
+                error: error.message,
+            };
+        }
+    }
+
+    handleStartGame(socket) {
+        try {
+            const rooms = Array.from(socket.rooms);
+            for (const roomId of rooms) {
+                if (roomId !== socket.id) {
+                    const room = this.roomManager.getRoom(roomId);
+                    if (room && room.hostId === socket.id) {
+                        // Check if this is a casino game and prepare balances
+                        const gameDefinition = this.registry.get(room.gameId);
+                        const isCasinoGame = gameDefinition?.isCasino || false;
+                        let initialBalances = {};
+
+                        if (isCasinoGame && this.profileService) {
+                            const players = room.playerManager.list();
+                            for (const p of players) {
+                                const username = p.metadata?.username || p.displayName;
+                                if (username) {
+                                    const balance = this.profileService.getBalance(username);
+                                    initialBalances[p.id] = balance !== null ? balance : 1000;
+                                } else {
+                                    initialBalances[p.id] = 1000;
+                                }
+                            }
+                        }
+
+                        this.roomManager.startGame(roomId, { initialBalances });
+                        return { success: true };
+                    }
+                }
+            }
+
+            return {
+                success: false,
+                error: 'Room not found or you are not the host',
+            };
+        } catch (error) {
+            this.logger.error('handleStartGame failed:', error);
+            return {
+                success: false,
+                error: error.message,
+            };
+        }
+    }
+
+    handleGameAction(socket, action) {
+        try {
+            const rooms = Array.from(socket.rooms);
+            for (const roomId of rooms) {
+                if (roomId !== socket.id) {
+                    this.roomManager.submitCommand(roomId, { ...action, playerId: socket.id });
+                    return { success: true };
+                }
+            }
+
+            return {
+                success: false,
+                error: 'Not in a game room',
+            };
+        } catch (error) {
+            this.logger.error('handleGameAction failed:', error);
+            return {
+                success: false,
+                error: error.message,
+            };
+        }
     }
 }
 
