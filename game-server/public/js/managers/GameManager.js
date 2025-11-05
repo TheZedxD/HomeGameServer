@@ -125,6 +125,8 @@ export class GameManager {
     this.socket.on('connect', () => {
       console.log('Successfully connected to the game server with ID:', this.socket.id);
       this.syncProfileWithSocket(this.profileManager.profile);
+      // Request room list on connection to show available games
+      this.socket.emit('getRoomList');
     });
     this.socket.on('connect_error', (error) => {
       console.error('Socket connection error:', error);

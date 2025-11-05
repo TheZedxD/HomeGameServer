@@ -337,7 +337,10 @@ io.on('connection', (socket) => {
       if (result.success) {
         console.log(`[Socket] Room created: ${result.roomId} by ${socket.username}`);
         emitOpenRoomsUpdate();
-        socket.emit('roomCreated', result);
+        // Emit the correct event that client expects
+        socket.emit('joinedMatchLobby', { room: result.room, yourId: socket.id });
+        // Also emit room state update to all players in the room
+        io.to(result.roomId).emit('roomStateUpdate', result.room);
       } else {
         socket.emit('error', { message: result.error, code: 'CREATE_ROOM_FAILED' });
       }
@@ -358,7 +361,10 @@ io.on('connection', (socket) => {
       if (result.success) {
         console.log(`[Socket] User ${socket.username} joined room: ${roomId}`);
         emitOpenRoomsUpdate();
-        socket.emit('roomJoined', result);
+        // Emit the correct event that client expects
+        socket.emit('joinedMatchLobby', { room: result.room, yourId: socket.id });
+        // Also emit room state update to all players in the room
+        io.to(result.roomId).emit('roomStateUpdate', result.room);
       } else {
         socket.emit('error', { message: result.error, code: 'JOIN_ROOM_FAILED' });
       }
@@ -451,7 +457,8 @@ io.on('connection', (socket) => {
 // ============================================================================
 
 function startServer() {
-  server.listen(PORT, () => {
+  // Explicitly bind to 0.0.0.0 to accept connections from all network interfaces (LAN access)
+  server.listen(PORT, '0.0.0.0', () => {
     console.log('\n' + '='.repeat(80));
     console.log('  HomeGameServer - Local Multiplayer Server');
     console.log('='.repeat(80));
