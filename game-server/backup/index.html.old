@@ -8,23 +8,14 @@
 </head>
 <body>
     <a class="skip-link" href="#main-lobby">Skip to lobby content</a>
-
-    <!-- Top Navigation Bar -->
-    <nav class="top-navbar">
-        <div class="navbar-content">
-            <div class="navbar-left">
-                <span class="navbar-title">🎮 Game Hub</span>
-            </div>
-            <div class="navbar-right">
-                <button id="stats-button" class="navbar-btn" type="button" title="View Stats">
-                    <span id="navbar-username">Guest</span> | Wins: <span id="navbar-wins">0</span>
-                </button>
-                <button id="network-toggle" class="navbar-btn" type="button" title="Toggle Network Info">
-                    ℹ️
-                </button>
-            </div>
+    <div class="profile-corner classic-raised win2k-window win2k-window--floating" id="profile-corner" role="button" aria-haspopup="dialog" aria-controls="identity-overlay" aria-expanded="false" aria-label="Open profile preferences" tabindex="0">
+        <img id="profile-avatar" src="/images/default-avatar.svg" alt="Player avatar" class="profile-avatar">
+        <div class="profile-stats">
+            <div class="profile-name" id="profile-display-name">Guest</div>
+            <div class="profile-meta">Wins: <span id="profile-wins">0</span></div>
         </div>
-    </nav>
+        <span class="profile-corner__hint" aria-hidden="true">Preferences</span>
+    </div>
 
     <div class="app-container">
         <header class="header">
@@ -67,14 +58,9 @@
                 <div class="window-body">
                     <p id="name-greeting" class="name-greeting">Welcome, <span id="player-name-preview">Guest</span>!</p>
 
-                    <div class="window-section classic-raised" aria-labelledby="username-title">
-                        <h2 id="username-title">Set Your Username</h2>
-                        <p>Choose a username for this session. Your stats will be saved locally.</p>
-                        <label for="username-input" class="sr-only">Username</label>
-                        <div class="input-row">
-                            <input type="text" id="username-input" placeholder="Enter username..." class="input-field" maxlength="24" autocomplete="name">
-                            <button id="save-username-btn" class="btn btn-primary" type="button">Save</button>
-                        </div>
+                    <div class="identity-cta" aria-live="polite">
+                        <p class="identity-cta__description">Open your profile preferences to update your display name, avatar, and account.</p>
+                        <button id="open-identity-overlay-btn" class="btn btn-secondary" type="button">Open Profile Preferences</button>
                     </div>
 
                     <div class="window-section classic-raised" aria-labelledby="p2p-title">
@@ -171,13 +157,12 @@
             </section>
         </main>
 
-        <footer class="footer" id="network-footer" role="contentinfo">
+        <footer class="footer" role="contentinfo">
             <div class="window">
                 <div class="title-bar">
                     <span class="title-bar-text">Server Status</span>
-                    <button id="footer-collapse-btn" class="title-bar-btn" aria-label="Toggle server info">▼</button>
                 </div>
-                <div class="window-body status-body" id="network-footer-body">
+                <div class="window-body status-body">
                     <div class="status-indicator online" role="status">Online</div>
                     <div class="status-message" aria-live="polite" role="status">Local multiplayer services are running.</div>
                     <div class="network-info" aria-live="polite" role="status">
@@ -188,45 +173,6 @@
         </footer>
     </div>
 
-    <!-- Stats Overlay -->
-    <div id="stats-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="stats-title" tabindex="-1">
-        <div class="modal-content classic-raised">
-            <div class="title-bar">
-                <span class="title-bar-text" id="stats-title">Player Statistics</span>
-                <div class="title-bar-controls">
-                    <button type="button" class="title-bar-btn" id="close-stats-btn" aria-label="Close statistics">×</button>
-                </div>
-            </div>
-            <div class="modal-body">
-                <div class="stats-content">
-                    <h2 id="stats-username-display">Guest</h2>
-                    <div class="stats-grid">
-                        <div class="stat-item">
-                            <div class="stat-label">Total Wins</div>
-                            <div class="stat-value" id="stats-wins">0</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-label">Total Losses</div>
-                            <div class="stat-value" id="stats-losses">0</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-label">Games Played</div>
-                            <div class="stat-value" id="stats-games">0</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-label">Win Rate</div>
-                            <div class="stat-value" id="stats-winrate">0%</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-actions">
-                    <button id="close-stats-modal-btn" class="btn btn-primary" type="button">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Create Game Modal -->
     <div id="create-game-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="create-game-title" tabindex="-1">
         <div class="modal-content classic-raised">
             <div class="title-bar">
@@ -242,7 +188,71 @@
         </div>
     </div>
 
-    <!-- Available Games Modal -->
+    <div id="identity-overlay" class="modal-overlay hidden identity-overlay" role="dialog" aria-modal="true" aria-labelledby="identity-overlay-title" tabindex="-1">
+        <div class="modal-content classic-raised identity-modal">
+            <div class="title-bar">
+                <span class="title-bar-text" id="identity-overlay-title">Profile Preferences</span>
+                <div class="title-bar-controls">
+                    <button type="button" class="title-bar-btn" id="close-identity-overlay-btn" aria-label="Close profile preferences">×</button>
+                </div>
+            </div>
+            <div class="modal-body identity-modal__body">
+                <div class="profile-preferences" role="document">
+                    <section class="profile-preferences__header">
+                        <div class="profile-preferences__avatar">
+                            <img id="profile-avatar-preview" src="/images/default-avatar.svg" alt="Profile avatar preview" class="profile-avatar profile-avatar--large">
+                            <button id="change-avatar-btn" class="btn btn-secondary" type="button">Change Avatar</button>
+                            <form id="avatar-upload-form" class="hidden" enctype="multipart/form-data">
+                                <input type="file" id="avatar-upload-input" name="avatar" accept="image/*">
+                                <input type="hidden" name="_csrf" id="csrf-token">
+                            </form>
+                        </div>
+                        <div class="profile-preferences__summary">
+                            <h2 class="profile-preferences__name" id="profile-overlay-display-name">Guest</h2>
+                            <p class="profile-preferences__wins">Wins: <span id="profile-overlay-wins">0</span></p>
+                        </div>
+                    </section>
+
+                    <section class="identity-modal__section" aria-labelledby="identity-section-title">
+                        <h3 id="identity-section-title">Display Name</h3>
+                        <p>Choose the name that will appear in match lobbies and scoreboards.</p>
+                        <label for="identity-display-name" class="input-label">Display name</label>
+                        <input type="text" id="identity-display-name" class="input-field" placeholder="Enter your display name..." maxlength="24" autocomplete="name">
+                        <p id="identity-status" class="name-status hidden" role="status"></p>
+                        <div class="modal-actions identity-modal__actions">
+                            <button id="identity-save-btn" class="btn btn-primary" type="button">Save Name</button>
+                            <button id="identity-cancel-btn" class="btn" type="button">Cancel</button>
+                        </div>
+                    </section>
+
+                    <section class="identity-modal__section" aria-labelledby="account-section-title">
+                        <h3 id="account-section-title">Account</h3>
+                        <p>Sign in to sync progress or sign out to switch players.</p>
+                        <div class="identity-modal__actions identity-modal__actions--account">
+                            <button id="sign-in-btn" class="btn btn-secondary" type="button">Sign In</button>
+                            <button id="sign-out-btn" class="btn btn-warning hidden" type="button">Sign Out</button>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="profile-prompt-modal" class="modal-overlay hidden prompt-modal" role="dialog" aria-modal="true" aria-labelledby="profile-prompt-title" tabindex="-1">
+        <div class="modal-content classic-raised">
+            <div class="title-bar">
+                <span class="title-bar-text" id="profile-prompt-title">Complete Your Profile</span>
+            </div>
+            <div class="modal-body">
+                <p id="profile-prompt-message">It looks like your profile is missing a display name or avatar. Update your profile to unlock the full experience.</p>
+                <div class="modal-actions">
+                    <button id="prompt-edit-profile-btn" class="btn btn-primary" type="button">Edit Profile</button>
+                    <button id="prompt-dismiss-btn" class="btn" type="button">Maybe Later</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="available-games-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="available-games-title" tabindex="-1">
         <div class="modal-content classic-raised" style="max-width: 600px;">
             <div class="title-bar">

@@ -6,7 +6,7 @@
 
 const { buildGameInstance, VotingStrategy } = require('../../core');
 const { BettingManager } = require('../../core/bettingManager');
-const { createDeck, shuffle, getCardDisplayName } = require('../war/cardUtils');
+const { createDeck, shuffle, getCardDisplayName } = require('../../shared/cardUtils');
 const { evaluateHand, determineWinners } = require('../texas-holdem/pokerUtils');
 
 /**

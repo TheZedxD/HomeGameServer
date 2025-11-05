@@ -9,7 +9,7 @@ const {
   shuffle,
   dealCards,
   getCardDisplayName
-} = require('./cardUtils');
+} = require('../../shared/cardUtils');
 
 /**
  * Strategy for playing a card in War

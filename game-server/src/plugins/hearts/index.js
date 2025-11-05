@@ -12,7 +12,7 @@ const {
   dealCards,
   getCardDisplayName,
   SUITS
-} = require('./cardUtils');
+} = require('../../shared/cardUtils');
 
 /**
  * Strategy for playing a card in Hearts

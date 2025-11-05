@@ -1389,3 +1389,233 @@ textarea:focus-visible {
   outline-offset: 2px;
   box-shadow: 0 0 0 3px rgba(30, 144, 255, 0.35);
 }
+
+/* ============================================================================
+   Simplified UI - Navbar, Stats, and Utilities
+   ============================================================================ */
+
+/* Top Navigation Bar */
+.top-navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: linear-gradient(180deg, var(--win2k-title-gradient-start) 0%, var(--win2k-title-gradient-end) 100%);
+  border-bottom: 2px solid var(--win2k-border-dark);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  z-index: var(--z-profile);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-4);
+}
+
+.navbar-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  color: white;
+}
+
+.navbar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.navbar-title {
+  font-weight: bold;
+  font-size: 13px;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.navbar-btn {
+  background: var(--win2k-button-face);
+  color: var(--win2k-text);
+  border: 1px solid var(--win2k-border-dark);
+  box-shadow: var(--shadow-raised);
+  padding: var(--space-2) var(--space-4);
+  font-size: 11px;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all var(--transition-snappy);
+  border-radius: 2px;
+}
+
+.navbar-btn:hover {
+  background: var(--win2k-button-highlight);
+}
+
+.navbar-btn:active {
+  box-shadow: var(--shadow-sunken);
+  transform: translateY(1px);
+}
+
+/* Adjust app container for navbar */
+.app-container {
+  margin-top: 40px;
+  height: calc(100vh - 40px);
+}
+
+/* Stats Overlay */
+.stats-content {
+  padding: var(--space-4);
+}
+
+.stats-content h2 {
+  margin: 0 0 var(--space-5) 0;
+  font-size: 18px;
+  text-align: center;
+  color: var(--win2k-desktop-blue);
+  font-weight: bold;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.stat-item {
+  background: var(--win2k-button-face);
+  padding: var(--space-4);
+  border: 2px solid var(--win2k-border-dark);
+  box-shadow: var(--shadow-sunken);
+  text-align: center;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--win2k-muted);
+  margin-bottom: var(--space-2);
+  text-transform: uppercase;
+  font-weight: bold;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: bold;
+  color: var(--win2k-desktop-blue);
+}
+
+/* Toast Notifications */
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--win2k-button-face);
+  color: var(--win2k-text);
+  padding: var(--space-4) var(--space-5);
+  border: 2px solid var(--win2k-border-dark);
+  box-shadow: var(--shadow-raised), 4px 4px 8px rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  max-width: 300px;
+  opacity: 0;
+  transform: translateX(100%);
+  transition: all var(--transition-soft);
+  pointer-events: auto;
+}
+
+.toast-show {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.toast-success {
+  border-left: 4px solid var(--win2k-success);
+}
+
+.toast-error {
+  border-left: 4px solid var(--win2k-error);
+}
+
+.toast-warning {
+  border-left: 4px solid var(--win2k-warning);
+}
+
+.toast-info {
+  border-left: 4px solid var(--win2k-desktop-blue);
+}
+
+/* Network Footer Collapse */
+#footer-collapse-btn {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--win2k-text);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  transition: background-color var(--transition-snappy);
+}
+
+#footer-collapse-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+#footer-collapse-btn:active {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* Username section styling */
+.window-section {
+  margin-bottom: var(--space-5);
+}
+
+.window-section h2 {
+  margin: 0 0 var(--space-3) 0;
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.window-section p {
+  margin: 0 0 var(--space-3) 0;
+  font-size: 11px;
+  color: var(--win2k-muted);
+}
+
+/* Screen reader only */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Responsive navbar */
+@media (max-width: 768px) {
+  .navbar-title {
+    font-size: 11px;
+  }
+
+  .navbar-btn {
+    padding: var(--space-1) var(--space-3);
+    font-size: 10px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
