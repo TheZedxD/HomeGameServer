@@ -320,7 +320,7 @@ export class GameManager {
     if (roomCode) {
       payload.roomCode = roomCode;
     }
-    this.socket.emit('createGame', payload);
+    this.socket.emit('createRoom', payload);
     const modal = this.uiManager.elements.modals.createGame;
     if (this.uiManager.modalManager && modal) {
       this.uiManager.modalManager.closeModal(modal);
@@ -330,7 +330,7 @@ export class GameManager {
   }
 
   joinGame(roomId) {
-    this.socket.emit('joinGame', roomId);
+    this.socket.emit('joinRoom', { roomId });
   }
 
   leaveGame() {
@@ -338,7 +338,7 @@ export class GameManager {
     this.lastGameOverState = null;
 
     if (this.socket && this.socket.connected) {
-      this.socket.emit('leaveGame');
+      this.socket.emit('leaveRoom');
     }
 
     this.destroyGameInstance();

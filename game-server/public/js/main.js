@@ -5,6 +5,7 @@
 
 import { UIManager } from './managers/UIManager.js';
 import { GameManager } from './managers/GameManager.js';
+import { ProfileManager } from './managers/ProfileManager.js';
 import { ErrorHandler } from './utils/ErrorHandler.js';
 import { createTutorialManager } from './ui/tutorial.js';
 
@@ -413,9 +414,10 @@ async function initializeApp() {
 
   // Initialize managers
   const storage = new LocalStorageManager();
+  const profileManager = new ProfileManager(storage);
   const userManager = new UserManager(socket, storage);
   const uiManager = new UIManager(socket);
-  const gameManager = new GameManager(socket, uiManager);
+  const gameManager = new GameManager(socket, uiManager, profileManager);
 
   // Socket event handlers
   socket.on('identified', (data) => {

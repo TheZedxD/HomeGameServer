@@ -70,6 +70,7 @@ class UserStore {
         wins: 0,
         losses: 0,
         gamesPlayed: 0,
+        credits: 10000, // Starting credits for new users
         created: new Date().toISOString(),
         lastSeen: new Date().toISOString()
       });
@@ -78,6 +79,10 @@ class UserStore {
       // Update last seen
       const user = this.users.get(cleanUsername);
       user.lastSeen = new Date().toISOString();
+      // Ensure credits field exists for legacy users
+      if (typeof user.credits !== 'number') {
+        user.credits = 10000;
+      }
       this.save();
     }
 
@@ -108,6 +113,33 @@ class UserStore {
       .trim()
       .replace(/[^a-zA-Z0-9_-]/g, '')
       .substring(0, 24) || 'Guest' + Math.random().toString(36).substring(2, 8);
+  }
+
+  // Credit management methods for ProfileService compatibility
+  getBalance(username) {
+    const user = this.getOrCreate(username);
+    return user.credits;
+  }
+
+  updateBalance(username, newBalance) {
+    const user = this.getOrCreate(username);
+    user.credits = Math.max(0, newBalance); // Ensure credits never go negative
+    this.save();
+    return user.credits;
+  }
+
+  addCredits(username, amount) {
+    const user = this.getOrCreate(username);
+    user.credits = (user.credits || 0) + amount;
+    this.save();
+    return user.credits;
+  }
+
+  deductCredits(username, amount) {
+    const user = this.getOrCreate(username);
+    user.credits = Math.max(0, (user.credits || 0) - amount);
+    this.save();
+    return user.credits;
   }
 }
 
@@ -210,10 +242,11 @@ app.get('/metrics', (req, res) => {
 
 let modularGameServer = null;
 
-// Initialize game server
+// Initialize game server with userStore as profileService
 modularGameServer = createModularGameServer({
   io: io,
-  logger: console
+  logger: console,
+  profileService: userStore
 });
 
 // Room list update broadcaster
@@ -260,14 +293,15 @@ io.on('connection', (socket) => {
       const user = userStore.getOrCreate(username);
       socket.username = user.username;
 
-      console.log(`[Socket] User identified: ${socket.username} (${socket.id})`);
+      console.log(`[Socket] User identified: ${socket.username} (${socket.id}) - Credits: ${user.credits}`);
 
       socket.emit('identified', {
         username: user.username,
         stats: {
           wins: user.wins,
           losses: user.losses,
-          gamesPlayed: user.gamesPlayed
+          gamesPlayed: user.gamesPlayed,
+          credits: user.credits
         }
       });
     } catch (error) {
@@ -283,7 +317,8 @@ io.on('connection', (socket) => {
         username: user.username,
         wins: user.wins,
         losses: user.losses,
-        gamesPlayed: user.gamesPlayed
+        gamesPlayed: user.gamesPlayed,
+        credits: user.credits
       });
     } catch (error) {
       emitSocketError({ socket, action: 'getUserStats', error });
@@ -291,13 +326,13 @@ io.on('connection', (socket) => {
   });
 
   // Create room
-  socket.on('createRoom', ({ gameType, username }) => {
+  socket.on('createRoom', async ({ gameType, username }) => {
     try {
       if (!socket.username) {
         socket.username = userStore.sanitizeUsername(username);
       }
 
-      const result = modularGameServer.handleCreateRoom(socket, gameType);
+      const result = await modularGameServer.handleCreateRoom(socket, gameType);
 
       if (result.success) {
         console.log(`[Socket] Room created: ${result.roomId} by ${socket.username}`);
@@ -312,13 +347,13 @@ io.on('connection', (socket) => {
   });
 
   // Join room
-  socket.on('joinRoom', ({ roomId, username }) => {
+  socket.on('joinRoom', async ({ roomId, username }) => {
     try {
       if (!socket.username) {
         socket.username = userStore.sanitizeUsername(username);
       }
 
-      const result = modularGameServer.handleJoinRoom(socket, roomId);
+      const result = await modularGameServer.handleJoinRoom(socket, roomId);
 
       if (result.success) {
         console.log(`[Socket] User ${socket.username} joined room: ${roomId}`);
