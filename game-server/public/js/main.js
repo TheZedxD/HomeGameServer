@@ -6,6 +6,7 @@
 import { UIManager } from './managers/UIManager.js';
 import { GameManager } from './managers/GameManager.js';
 import { ErrorHandler } from './utils/ErrorHandler.js';
+import { createTutorialManager } from './ui/tutorial.js';
 
 // ============================================================================
 // Local Storage Manager
@@ -448,6 +449,14 @@ async function initializeApp() {
   // Setup error handler
   ErrorHandler.initialize();
 
+  // Initialize tutorial system
+  const tutorialManager = createTutorialManager();
+
+  // Make toast manager globally accessible for tutorial
+  window.toastManager = {
+    show: showToast
+  };
+
   console.log('[App] Initialization complete');
 
   // Make managers globally accessible for debugging
@@ -456,7 +465,8 @@ async function initializeApp() {
     userManager,
     uiManager,
     gameManager,
-    storage
+    storage,
+    tutorialManager
   };
 }
 
