@@ -1915,3 +1915,559 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================================
+   Mobile-Specific Styles - Windows 2000 Edition
+   ============================================================================ */
+
+/* Mobile Device Base Styles */
+.device-mobile {
+  font-size: 12px;
+}
+
+.device-mobile body {
+  overflow-x: hidden;
+}
+
+/* Touch-friendly tap targets (minimum 44x44px) */
+.device-touch .btn,
+.device-touch .win2k-button,
+.device-touch .navbar-btn,
+.device-touch .quick-action-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: var(--space-3) var(--space-4);
+}
+
+.device-touch .title-bar-btn {
+  min-width: 32px;
+  min-height: 32px;
+}
+
+/* Extra Small Screens (Portrait Mobile - up to 480px) */
+@media (max-width: 480px) {
+  :root {
+    --space-1: 2px;
+    --space-2: 4px;
+    --space-3: 6px;
+    --space-4: 8px;
+    --space-5: 12px;
+    --space-6: 16px;
+  }
+
+  /* Navbar adjustments */
+  .top-navbar {
+    height: 44px;
+    padding: 0 var(--space-2);
+  }
+
+  .navbar-title {
+    font-size: 10px;
+  }
+
+  .navbar-btn {
+    padding: var(--space-2) var(--space-3);
+    font-size: 9px;
+    min-height: 32px;
+  }
+
+  /* App container adjustments */
+  .app-container {
+    margin-top: 44px;
+    height: calc(100vh - 44px);
+    padding: var(--space-1);
+  }
+
+  .centered-content {
+    padding: var(--space-1);
+    gap: var(--space-2);
+  }
+
+  /* Header adjustments */
+  .header .intro-text {
+    font-size: 14px;
+  }
+
+  .header .tagline {
+    font-size: 10px;
+  }
+
+  /* Window elements */
+  .window-body {
+    padding: var(--space-2);
+    gap: var(--space-2);
+  }
+
+  .title-bar {
+    padding: var(--space-2);
+    min-height: 28px;
+  }
+
+  .title-bar-text {
+    font-size: 10px;
+  }
+
+  /* Lobby sections */
+  .lobby-section {
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+
+  .section-header h2 {
+    font-size: 12px;
+  }
+
+  .section-description {
+    font-size: 10px;
+  }
+
+  /* Quick actions - stack vertically */
+  .quick-actions {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+
+  .quick-action-btn {
+    min-height: 80px;
+    padding: var(--space-4);
+  }
+
+  .btn-icon {
+    font-size: 24px;
+  }
+
+  .btn-text strong {
+    font-size: 12px;
+  }
+
+  .btn-text small {
+    font-size: 9px;
+  }
+
+  /* Input fields */
+  .input-field {
+    font-size: 12px;
+    padding: var(--space-3);
+    min-height: 44px;
+  }
+
+  /* Buttons */
+  .btn,
+  .win2k-button {
+    min-height: 44px;
+    font-size: 11px;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  /* Game container */
+  #game-container {
+    width: min(90vmin, 100%);
+    max-width: 100%;
+  }
+
+  .game-stage {
+    padding: var(--space-2);
+  }
+
+  #game-info-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  #game-info-bar p {
+    font-size: 9px;
+  }
+
+  #game-info-bar h2 {
+    font-size: 11px;
+  }
+
+  /* Modals */
+  .modal-overlay {
+    padding: var(--space-2);
+  }
+
+  .modal-content {
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100vh - var(--space-2) * 2);
+  }
+
+  .modal-body {
+    padding: var(--space-2);
+    gap: var(--space-2);
+  }
+
+  /* Stats grid - single column on mobile */
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  .stat-value {
+    font-size: 20px;
+  }
+
+  /* Match lobby */
+  .match-lobby {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+
+  .match-controls {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .match-controls .btn {
+    width: 100%;
+  }
+
+  /* Footer */
+  .footer {
+    font-size: 9px;
+  }
+
+  .network-info {
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 100%;
+    font-size: 9px;
+  }
+
+  /* Tutorial overlay */
+  .tutorial-content {
+    width: 100%;
+  }
+
+  .tutorial-step {
+    min-height: 200px;
+  }
+
+  .tutorial-step h2 {
+    font-size: 16px;
+  }
+
+  .tutorial-step p {
+    font-size: 11px;
+  }
+
+  .tutorial-icon {
+    font-size: 48px;
+  }
+
+  /* Selection list - single column */
+  .selection-list {
+    grid-template-columns: 1fr;
+  }
+
+  /* Room list */
+  .room-item {
+    padding: var(--space-2);
+  }
+
+  .room-item h3 {
+    font-size: 10px;
+  }
+
+  .room-item p {
+    font-size: 8px;
+  }
+
+  /* Toast notifications */
+  .toast-container {
+    bottom: 10px;
+    right: 10px;
+    left: 10px;
+    max-width: 100%;
+  }
+
+  .toast {
+    max-width: 100%;
+    font-size: 11px;
+    padding: var(--space-3);
+  }
+}
+
+/* Small Screens (Landscape Mobile / Small Tablet - 481px to 768px) */
+@media (min-width: 481px) and (max-width: 768px) {
+  /* Navbar */
+  .navbar-title {
+    font-size: 11px;
+  }
+
+  .navbar-btn {
+    padding: var(--space-2) var(--space-3);
+    font-size: 10px;
+  }
+
+  /* Quick actions - 2 columns */
+  .quick-actions {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-3);
+  }
+
+  /* Game container */
+  #game-container {
+    width: min(70vmin, 480px);
+  }
+
+  /* Modals */
+  .modal-content {
+    width: min(90%, 600px);
+  }
+
+  /* Stats grid - 2 columns */
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Medium Screens (Tablet - 769px to 1024px) */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .centered-content {
+    max-width: 800px;
+  }
+
+  #game-container {
+    width: min(65vmin, 520px);
+  }
+
+  .quick-actions {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Orientation-specific styles */
+@media (orientation: portrait) {
+  .device-mobile .quick-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .device-mobile #game-container {
+    width: min(85vw, 400px);
+  }
+
+  .device-mobile .centered-content {
+    padding: var(--space-2);
+  }
+}
+
+@media (orientation: landscape) {
+  .device-mobile .app-container {
+    padding: var(--space-2);
+  }
+
+  .device-mobile #game-container {
+    width: min(70vh, 480px);
+  }
+
+  .device-mobile .quick-actions {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Device-specific class targeting */
+body[data-device-type="mobile"] .header .intro-text {
+  font-size: 14px;
+}
+
+body[data-device-type="mobile"] .centered-content {
+  gap: var(--space-2);
+}
+
+body[data-device-type="mobile"] .lobby-section {
+  padding: var(--space-3);
+}
+
+body[data-device-type="mobile"] .modal-overlay {
+  align-items: flex-end;
+}
+
+body[data-device-type="mobile"] .modal-content {
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  max-height: 90vh;
+}
+
+/* Touch-specific enhancements */
+.device-touch .btn:active,
+.device-touch .win2k-button:active {
+  transform: scale(0.98);
+}
+
+.device-touch .room-item:active {
+  transform: scale(0.99);
+}
+
+.device-touch .quick-action-btn:active {
+  transform: translateY(0);
+}
+
+/* Prevent text selection on touch devices for UI elements */
+.device-touch .btn,
+.device-touch .title-bar,
+.device-touch .navbar-content {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Better scrolling on mobile */
+.device-mobile .window-body,
+.device-mobile .modal-body,
+.device-mobile .lobby-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Fix overlapping issues on mobile */
+.device-mobile .modal-overlay {
+  overflow-y: auto;
+}
+
+.device-mobile .modal-content {
+  margin: auto;
+  overflow: hidden;
+}
+
+.device-mobile .modal-body {
+  overflow-y: auto;
+  max-height: calc(90vh - 100px);
+}
+
+/* Ensure proper z-index stacking */
+.device-mobile .top-navbar {
+  z-index: calc(var(--z-profile) + 10);
+}
+
+.device-mobile .modal-overlay {
+  z-index: calc(var(--z-modal) + 5);
+}
+
+.device-mobile .tutorial-overlay {
+  z-index: calc(var(--z-modal) + 105);
+}
+
+/* Optimized animations for mobile */
+@media (max-width: 768px) {
+  @keyframes slideInDown {
+    from {
+      opacity: 0;
+      transform: translateY(-15px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideInUp {
+    from {
+      opacity: 0;
+      transform: translateY(15px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideInScale {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+}
+
+/* Windows 2000 style consistency across devices */
+.device-mobile .window,
+.device-mobile .win2k-window,
+.device-mobile .modal-content,
+.device-mobile .classic-raised,
+.device-mobile .classic-sunken {
+  /* Maintain Windows 2000 aesthetic */
+  box-shadow: var(--shadow-raised);
+}
+
+.device-mobile .btn,
+.device-mobile .win2k-button {
+  /* Keep Windows 2000 button style */
+  background: var(--win2k-button-face);
+  box-shadow: var(--shadow-raised);
+}
+
+.device-mobile .btn:active,
+.device-mobile .win2k-button:active {
+  box-shadow: var(--shadow-sunken);
+}
+
+/* Improved readability on small screens */
+@media (max-width: 480px) {
+  body {
+    font-size: 12px;
+  }
+
+  .window-heading {
+    font-size: 13px;
+  }
+
+  .name-greeting {
+    font-size: 11px;
+  }
+}
+
+/* Landscape mobile specific optimizations */
+@media (max-width: 768px) and (orientation: landscape) {
+  .app-container {
+    padding: var(--space-1);
+  }
+
+  .header {
+    display: none; /* Hide header in landscape to save space */
+  }
+
+  .centered-content {
+    gap: var(--space-2);
+  }
+
+  .lobby-section {
+    padding: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+
+  .top-navbar {
+    height: 36px;
+  }
+
+  .app-container {
+    margin-top: 36px;
+    height: calc(100vh - 36px);
+  }
+}
+
+/* Accessibility improvements for mobile */
+@media (hover: none) and (pointer: coarse) {
+  /* This targets touch devices */
+  .btn:hover,
+  .win2k-button:hover,
+  .navbar-btn:hover {
+    /* Remove hover effects on touch devices */
+    filter: none;
+  }
+
+  /* Add focus styles instead */
+  .btn:focus,
+  .win2k-button:focus,
+  .navbar-btn:focus {
+    outline: 2px solid var(--win2k-title-gradient-end);
+    outline-offset: 2px;
+  }
+}

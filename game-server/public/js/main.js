@@ -10,6 +10,136 @@ import { ErrorHandler } from './utils/ErrorHandler.js';
 import { createTutorialManager } from './ui/tutorial.js';
 
 // ============================================================================
+// Device Detection
+// ============================================================================
+
+class DeviceDetector {
+  constructor() {
+    this.isMobile = this.detectMobile();
+    this.isTablet = this.detectTablet();
+    this.isTouchDevice = this.detectTouch();
+    this.screenSize = this.getScreenSize();
+
+    // Apply device-specific classes to body
+    this.applyDeviceClasses();
+
+    // Monitor orientation changes
+    this.setupOrientationListener();
+
+    console.log('[Device] Detected:', {
+      isMobile: this.isMobile,
+      isTablet: this.isTablet,
+      isTouchDevice: this.isTouchDevice,
+      screenSize: this.screenSize,
+      userAgent: navigator.userAgent
+    });
+  }
+
+  detectMobile() {
+    // Check user agent for mobile devices
+    const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
+    const isMobileUA = mobileRegex.test(navigator.userAgent);
+
+    // Check screen width (max 768px for mobile)
+    const isMobileScreen = window.innerWidth <= 768;
+
+    // Check if it's a touch device with small screen
+    const isTouchSmallScreen = ('ontouchstart' in window || navigator.maxTouchPoints > 0) && window.innerWidth <= 768;
+
+    return isMobileUA || isTouchSmallScreen || isMobileScreen;
+  }
+
+  detectTablet() {
+    const tabletRegex = /iPad|Android(?!.*Mobile)|Tablet/i;
+    const isTabletUA = tabletRegex.test(navigator.userAgent);
+
+    // Check screen width (between 768px and 1024px for tablet)
+    const isTabletScreen = window.innerWidth > 768 && window.innerWidth <= 1024;
+
+    return isTabletUA || isTabletScreen;
+  }
+
+  detectTouch() {
+    return 'ontouchstart' in window || navigator.maxTouchPoints > 0 || navigator.msMaxTouchPoints > 0;
+  }
+
+  getScreenSize() {
+    const width = window.innerWidth;
+
+    if (width <= 480) return 'xs'; // Extra small (phone portrait)
+    if (width <= 768) return 'sm'; // Small (phone landscape)
+    if (width <= 1024) return 'md'; // Medium (tablet)
+    if (width <= 1440) return 'lg'; // Large (desktop)
+    return 'xl'; // Extra large
+  }
+
+  applyDeviceClasses() {
+    const body = document.body;
+
+    if (this.isMobile) {
+      body.classList.add('device-mobile');
+      console.log('[Device] Mobile mode enabled');
+    }
+
+    if (this.isTablet) {
+      body.classList.add('device-tablet');
+      console.log('[Device] Tablet mode enabled');
+    }
+
+    if (this.isTouchDevice) {
+      body.classList.add('device-touch');
+      console.log('[Device] Touch device detected');
+    }
+
+    body.classList.add(`screen-${this.screenSize}`);
+
+    // Add data attribute for CSS targeting
+    body.setAttribute('data-device-type', this.isMobile ? 'mobile' : (this.isTablet ? 'tablet' : 'desktop'));
+  }
+
+  setupOrientationListener() {
+    const handleOrientationChange = () => {
+      const isPortrait = window.innerHeight > window.innerWidth;
+      const isLandscape = window.innerWidth > window.innerHeight;
+
+      document.body.classList.toggle('orientation-portrait', isPortrait);
+      document.body.classList.toggle('orientation-landscape', isLandscape);
+
+      console.log('[Device] Orientation changed:', isPortrait ? 'portrait' : 'landscape');
+
+      // Re-detect screen size on orientation change
+      const oldSize = this.screenSize;
+      this.screenSize = this.getScreenSize();
+
+      if (oldSize !== this.screenSize) {
+        document.body.classList.remove(`screen-${oldSize}`);
+        document.body.classList.add(`screen-${this.screenSize}`);
+      }
+    };
+
+    // Listen for orientation changes
+    window.addEventListener('orientationchange', handleOrientationChange);
+    window.addEventListener('resize', handleOrientationChange);
+
+    // Set initial orientation
+    handleOrientationChange();
+  }
+
+  // Utility methods for checking device type
+  static isMobileDevice() {
+    return document.body.classList.contains('device-mobile');
+  }
+
+  static isTabletDevice() {
+    return document.body.classList.contains('device-tablet');
+  }
+
+  static isTouchEnabled() {
+    return document.body.classList.contains('device-touch');
+  }
+}
+
+// ============================================================================
 // Local Storage Manager
 // ============================================================================
 
@@ -383,6 +513,9 @@ function showToast(message, type = 'info') {
 async function initializeApp() {
   console.log('[App] Initializing HomeGameServer frontend...');
 
+  // Initialize Device Detection
+  const deviceDetector = new DeviceDetector();
+
   // Initialize Socket.IO
   const socket = io({
     transports: ['websocket', 'polling'],
@@ -468,7 +601,8 @@ async function initializeApp() {
     uiManager,
     gameManager,
     storage,
-    tutorialManager
+    tutorialManager,
+    deviceDetector
   };
 }
 
