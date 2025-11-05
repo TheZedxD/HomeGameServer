@@ -6,7 +6,7 @@
 
 const { buildGameInstance, VotingStrategy } = require('../../core');
 const { BettingManager } = require('../../core/bettingManager');
-const { createDeck, shuffle } = require('../war/cardUtils');
+const { createDeck, shuffle } = require('../../shared/cardUtils');
 
 /**
  * Calculate Baccarat hand value (modulo 10)
