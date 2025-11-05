@@ -27,72 +27,76 @@
     </nav>
 
     <div class="app-container">
-        <header class="header">
-            <div class="window">
-                <div class="title-bar">
-                    <span class="title-bar-text">Game Hub Control Center</span>
-                    <div class="title-bar-controls">
-                        <button type="button" class="title-bar-btn" aria-label="Minimize" tabindex="-1">_</button>
-                        <button type="button" class="title-bar-btn" aria-label="Maximize" tabindex="-1">□</button>
-                        <button type="button" class="title-bar-btn" aria-label="Close" tabindex="-1">×</button>
-                    </div>
-                </div>
-                <div class="window-body">
-                    <h1 class="intro-text">Welcome to Game Hub</h1>
-                    <p class="tagline">A lightweight, local-first platform for classic games with authentic Windows 2000 styling.</p>
-                </div>
-            </div>
-        </header>
-
-        <aside class="lobby-list" aria-label="Available games">
-            <div class="window" style="height: 100%;">
-                <div class="title-bar">
-                    <span class="title-bar-text">Available LAN Games</span>
-                </div>
-                <div class="window-body lobby-body">
-                    <div class="classic-sunken lobby-scroll">
-                        <div id="room-list">
-                            <p class="text-muted">No open games found. Create one!</p>
+        <div class="centered-content">
+            <header class="header">
+                <div class="window">
+                    <div class="title-bar">
+                        <span class="title-bar-text">🎮 Game Hub - Windows 2000 Edition</span>
+                        <div class="title-bar-controls">
+                            <button type="button" class="title-bar-btn" aria-label="Minimize" tabindex="-1">_</button>
+                            <button type="button" class="title-bar-btn" aria-label="Maximize" tabindex="-1">□</button>
+                            <button type="button" class="title-bar-btn" aria-label="Close" tabindex="-1">×</button>
                         </div>
                     </div>
+                    <div class="window-body header-body">
+                        <h1 class="intro-text">Welcome to Game Hub</h1>
+                        <p class="tagline">Play classic multiplayer games with friends - locally or online!</p>
+                    </div>
                 </div>
-            </div>
-        </aside>
+            </header>
 
-        <main class="left-panels">
+            <main class="main-content">
             <section id="main-lobby" class="window" aria-labelledby="main-lobby-title">
                 <div class="title-bar">
-                    <span class="title-bar-text" id="main-lobby-title">Player Setup &amp; Quick Actions</span>
+                    <span class="title-bar-text" id="main-lobby-title">⚙️ Setup & Play</span>
                 </div>
                 <div class="window-body">
-                    <p id="name-greeting" class="name-greeting">Welcome, <span id="player-name-preview">Guest</span>!</p>
-
-                    <div class="window-section classic-raised" aria-labelledby="username-title">
-                        <h2 id="username-title">Set Your Username</h2>
-                        <p>Choose a username for this session. Your stats will be saved locally.</p>
+                    <!-- Username Section -->
+                    <div class="lobby-section" id="username-section" data-tutorial="username">
+                        <div class="section-header">
+                            <h2 id="username-title">👤 Player Name</h2>
+                        </div>
+                        <p id="name-greeting" class="name-greeting">Playing as: <span id="player-name-preview">Guest</span></p>
                         <label for="username-input" class="sr-only">Username</label>
                         <div class="input-row">
-                            <input type="text" id="username-input" placeholder="Enter username..." class="input-field" maxlength="24" autocomplete="name">
+                            <input type="text" id="username-input" placeholder="Enter your name..." class="input-field" maxlength="24" autocomplete="name">
                             <button id="save-username-btn" class="btn btn-primary" type="button">Save</button>
                         </div>
                     </div>
 
-                    <div class="window-section classic-raised" aria-labelledby="p2p-title">
-                        <h2 id="p2p-title">Play Online (P2P)</h2>
-                        <p>Enter a shared, secret room code to connect directly with a friend over the internet.</p>
-                        <label for="online-room-code" class="sr-only">Room code</label>
-                        <div class="input-row">
-                            <input type="text" id="online-room-code" placeholder="Enter Room Code..." class="input-field" autocomplete="off">
-                            <button id="join-online-btn" class="btn btn-primary" type="button">Join</button>
+                    <!-- Quick Play Actions -->
+                    <div class="lobby-section" id="quick-play-section" data-tutorial="quickplay">
+                        <div class="section-header">
+                            <h2>🎮 Quick Play</h2>
+                        </div>
+                        <div class="quick-actions">
+                            <button id="show-create-game-modal-btn" class="quick-action-btn btn-primary" type="button" data-tutorial="create">
+                                <span class="btn-icon">➕</span>
+                                <span class="btn-text">
+                                    <strong>Create Game</strong>
+                                    <small>Host a new game</small>
+                                </span>
+                            </button>
+                            <button id="show-available-games-btn" class="quick-action-btn btn-secondary" type="button" data-tutorial="join">
+                                <span class="btn-icon">🔍</span>
+                                <span class="btn-text">
+                                    <strong>Join Game</strong>
+                                    <small>Browse available games</small>
+                                </span>
+                            </button>
                         </div>
                     </div>
 
-                    <div class="window-section classic-raised" aria-labelledby="lan-title">
-                        <h2 id="lan-title">Play on Local WiFi</h2>
-                        <p>Create or join a game with others on the same network.</p>
+                    <!-- Online Play Section -->
+                    <div class="lobby-section" id="online-section" data-tutorial="online">
+                        <div class="section-header">
+                            <h2 id="p2p-title">🌐 Play Online</h2>
+                        </div>
+                        <p class="section-description">Connect with friends anywhere using a shared room code</p>
+                        <label for="online-room-code" class="sr-only">Room code</label>
                         <div class="input-row">
-                            <button id="show-available-games-btn" class="btn btn-secondary" type="button">View Available Games</button>
-                            <button id="show-create-game-modal-btn" class="btn btn-primary" type="button">Create New Game</button>
+                            <input type="text" id="online-room-code" placeholder="Enter room code..." class="input-field" autocomplete="off">
+                            <button id="join-online-btn" class="btn btn-primary" type="button">Join Room</button>
                         </div>
                     </div>
                 </div>
@@ -171,7 +175,7 @@
             </section>
         </main>
 
-        <footer class="footer" id="network-footer" role="contentinfo">
+            <footer class="footer" id="network-footer" role="contentinfo">
             <div class="window">
                 <div class="title-bar">
                     <span class="title-bar-text">Server Status</span>
@@ -186,6 +190,55 @@
                 </div>
             </div>
         </footer>
+        </div>
+    </div>
+
+    <!-- Tutorial Overlay -->
+    <div id="tutorial-overlay" class="tutorial-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="tutorial-title">
+        <div class="tutorial-content window">
+            <div class="title-bar">
+                <span class="title-bar-text" id="tutorial-title">📚 Welcome Tutorial</span>
+            </div>
+            <div class="window-body">
+                <div class="tutorial-step" data-step="0">
+                    <h2>Welcome to Game Hub! 🎮</h2>
+                    <p>This quick tutorial will help you get started. Let's show you around!</p>
+                    <div class="tutorial-image">
+                        <div class="tutorial-icon">🎯</div>
+                    </div>
+                </div>
+                <div class="tutorial-step hidden" data-step="1">
+                    <h2>Set Your Username 👤</h2>
+                    <p>First, give yourself a name! This will be shown to other players and your stats will be saved locally.</p>
+                    <div class="tutorial-pointer">👆 Find the "Player Name" section above</div>
+                </div>
+                <div class="tutorial-step hidden" data-step="2">
+                    <h2>Create or Join Games 🎮</h2>
+                    <p>Use the Quick Play buttons to start:</p>
+                    <ul>
+                        <li><strong>Create Game:</strong> Host a new game and wait for players to join</li>
+                        <li><strong>Join Game:</strong> Browse and join games on your local network</li>
+                    </ul>
+                </div>
+                <div class="tutorial-step hidden" data-step="3">
+                    <h2>Play Online 🌐</h2>
+                    <p>Want to play with friends anywhere? Use the Online Play section with a shared room code!</p>
+                    <div class="tutorial-pointer">👇 Enter the same code as your friend</div>
+                </div>
+                <div class="tutorial-step hidden" data-step="4">
+                    <h2>Ready to Play! ✨</h2>
+                    <p>You're all set! Check your stats anytime by clicking the navbar at the top.</p>
+                    <p><strong>Tip:</strong> The server info at the bottom shows your connection status.</p>
+                </div>
+                <div class="tutorial-navigation">
+                    <button id="tutorial-skip" class="btn btn-secondary" type="button">Skip Tutorial</button>
+                    <div class="tutorial-progress">
+                        <span id="tutorial-step-indicator">1 / 5</span>
+                    </div>
+                    <button id="tutorial-next" class="btn btn-primary" type="button">Next</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Stats Overlay -->

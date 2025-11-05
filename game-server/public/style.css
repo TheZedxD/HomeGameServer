@@ -141,33 +141,51 @@
 
 @layer layout {
   .app-container {
-    display: grid;
-    gap: var(--space-2);
-    padding: var(--space-2);
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr auto;
-    container: layout-shell / inline-size;
-    height: 100vh;
-    overflow: hidden;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: var(--space-4);
+    margin-top: 40px;
+    height: calc(100vh - 40px);
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
-  .header {
-    grid-column: 1 / -1;
-    position: relative;
-  }
-
-  .header .window-body {
+  .centered-content {
+    width: 100%;
+    max-width: 900px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
     padding: var(--space-3);
   }
 
+  .header {
+    position: relative;
+    animation: slideInDown 0.4s ease-out;
+  }
+
+  .header .window-body {
+    padding: var(--space-4);
+    text-align: center;
+  }
+
   .header .intro-text {
-    font-size: 14px;
-    margin: 0;
+    font-size: 18px;
+    margin: 0 0 var(--space-2) 0;
   }
 
   .header .tagline {
-    font-size: 10px;
+    font-size: 12px;
     margin: 0;
+    color: var(--win2k-muted);
+  }
+
+  .main-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    animation: slideInUp 0.5s ease-out;
   }
 
   .left-panels {
@@ -204,12 +222,16 @@
   }
 
   .footer {
-    grid-column: 1 / -1;
     font-size: 10px;
+    margin-top: var(--space-4);
   }
 
   .footer .window-body {
     padding: var(--space-2) var(--space-3);
+  }
+
+  .footer .window {
+    opacity: 0.95;
   }
 
   .auth-body {
@@ -249,6 +271,32 @@
 
     .identity-cta {
       padding: var(--space-2);
+    }
+  }
+
+  /* Responsive centered layout */
+  @media (max-width: 960px) {
+    .centered-content {
+      max-width: 100%;
+    }
+
+    .app-container {
+      padding: var(--space-2);
+    }
+  }
+
+  @media (max-width: 768px) {
+    .header .intro-text {
+      font-size: 16px;
+    }
+
+    .header .tagline {
+      font-size: 11px;
+    }
+
+    .centered-content {
+      padding: var(--space-2);
+      gap: var(--space-3);
     }
   }
 }
@@ -471,6 +519,84 @@
     color: var(--win2k-muted);
     font-size: 10px;
     line-height: 1.4;
+  }
+
+  /* New Lobby Section Styles */
+  .lobby-section {
+    padding: var(--space-4);
+    margin-bottom: var(--space-4);
+    background: var(--surface-panel);
+    box-shadow: var(--shadow-raised);
+    border-radius: var(--radius-sm);
+    border: 2px solid var(--win2k-border-mid-light);
+  }
+
+  .lobby-section:last-child {
+    margin-bottom: 0;
+  }
+
+  .section-header {
+    margin-bottom: var(--space-3);
+    padding-bottom: var(--space-2);
+    border-bottom: 2px solid var(--win2k-border-mid-light);
+  }
+
+  .section-header h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--win2k-text);
+  }
+
+  .section-description {
+    margin: 0 0 var(--space-3) 0;
+    color: var(--win2k-muted);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  /* Quick Action Buttons */
+  .quick-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-3);
+  }
+
+  .quick-action-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-5);
+    min-height: 100px;
+    text-align: center;
+    transition: all var(--transition-snappy);
+  }
+
+  .quick-action-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-raised), 0 4px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  .btn-icon {
+    font-size: 32px;
+    line-height: 1;
+  }
+
+  .btn-text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .btn-text strong {
+    font-size: 13px;
+    font-weight: bold;
+  }
+
+  .btn-text small {
+    font-size: 10px;
+    opacity: 0.8;
   }
 
   .name-row,
@@ -1228,6 +1354,116 @@
   .prompt-modal .modal-content {
     max-width: 460px;
   }
+
+  /* Tutorial Overlay Styles */
+  .tutorial-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: calc(var(--z-modal) + 100);
+    padding: var(--space-4);
+    backdrop-filter: blur(4px);
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  .tutorial-overlay.hidden {
+    display: none;
+  }
+
+  .tutorial-content {
+    width: min(600px, 100%);
+    max-height: calc(100vh - var(--space-6) * 2);
+    animation: slideInScale 0.4s ease-out;
+  }
+
+  .tutorial-content .window-body {
+    padding: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .tutorial-step {
+    min-height: 250px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .tutorial-step h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: bold;
+    color: var(--win2k-desktop-blue);
+  }
+
+  .tutorial-step p {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--win2k-text);
+  }
+
+  .tutorial-step ul {
+    margin: var(--space-2) 0;
+    padding-left: var(--space-5);
+  }
+
+  .tutorial-step li {
+    margin: var(--space-2) 0;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .tutorial-image {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-5);
+    background: var(--surface-elevated);
+    border: 2px solid var(--win2k-border-mid-light);
+    border-radius: var(--radius-sm);
+    min-height: 120px;
+  }
+
+  .tutorial-icon {
+    font-size: 64px;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  .tutorial-pointer {
+    padding: var(--space-3);
+    background: var(--win2k-warning);
+    color: #000000;
+    font-weight: bold;
+    font-size: 13px;
+    text-align: center;
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-raised);
+    animation: bounce 1.5s ease-in-out infinite;
+  }
+
+  .tutorial-navigation {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 2px solid var(--win2k-border-mid-light);
+  }
+
+  .tutorial-progress {
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--win2k-desktop-blue);
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface-elevated);
+    border: 1px solid var(--win2k-border-mid);
+    border-radius: var(--radius-sm);
+  }
 }
 
 @layer utilities {
@@ -1329,6 +1565,66 @@
     }
     100% {
       transform: rotateY(180deg);
+    }
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideInDown {
+    from {
+      opacity: 0;
+      transform: translateY(-30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideInUp {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideInScale {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.1);
+    }
+  }
+
+  @keyframes bounce {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
     }
   }
 }
