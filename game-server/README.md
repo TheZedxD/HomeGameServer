@@ -124,16 +124,45 @@ View your stats by clicking your username in the top navbar!
 
 ## 🌐 Network Play
 
-### Local WiFi (LAN)
-1. Start the server
-2. Note the network IP displayed in the footer
-3. Share the URL with friends on the same network
-4. They connect and join your game!
+### 📱 Playing from Your Phone/Tablet (Same WiFi)
 
-### Online (P2P)
-1. Set up port forwarding on your router (port 8081)
-2. Share your public IP
-3. Friends connect via `http://YOUR_IP:8081`
+The server is now fully configured for easy mobile access! When you start the server, you'll see:
+
+```
+📱 CONNECTION URLS:
+─────────────────────────────────────────────────────
+On this computer:     http://localhost:8081
+On your phone/tablet: http://192.168.1.X:8081
+─────────────────────────────────────────────────────
+
+💡 TIP: Make sure your phone is on the same WiFi network!
+```
+
+**Steps to connect from your phone:**
+
+1. **Start the server** on your computer (`npm start`)
+2. **Copy the network URL** shown in the console (the `http://192.168.1.X:8081` one)
+3. **Open your phone's browser** and paste the URL
+4. **You're connected!** The network info is also shown at the bottom of the webpage
+
+**Troubleshooting:**
+- ✅ **CORS is enabled** - no cross-origin issues
+- ✅ **Server binds to 0.0.0.0** - accepts all network connections
+- ❌ If you can't connect, check your firewall settings
+- ❌ Make sure both devices are on the **same WiFi network**
+- ❌ Some routers have "client isolation" enabled - disable it in router settings
+
+### 🌍 Local WiFi (LAN) with Friends
+1. Start the server
+2. Check the network URL in the console or webpage footer
+3. Share the URL with friends on the same WiFi
+4. Everyone can join and play together!
+
+### 🌐 Online (Port Forwarding)
+1. Set up port forwarding on your router (port 8081 → your computer's local IP)
+2. Find your public IP at [whatismyip.com](https://www.whatismyip.com)
+3. Share `http://YOUR_PUBLIC_IP:8081` with friends
+4. They can connect from anywhere!
 
 ## 🐛 Development
 
@@ -170,10 +199,14 @@ Platform-specific installation scripts are provided:
 - Make sure Node.js 18+ is installed: `node --version`
 - Delete `node_modules` and reinstall: `rm -rf node_modules && npm install`
 
-### Can't connect from other devices
-- Check your firewall settings
-- Verify the IP address shown in the network info
-- Make sure all devices are on the same network
+### Can't connect from other devices (phone/tablet)
+- ✅ **CORS is now enabled by default** - the server accepts connections from any origin
+- ✅ **Server binds to 0.0.0.0** - listens on all network interfaces
+- Check your **firewall settings** - you may need to allow port 8081
+- Verify the **network IP address** shown in the server console or webpage footer
+- Make sure all devices are on the **same WiFi network**
+- Check if your router has **"AP Isolation" or "Client Isolation"** enabled - this blocks device-to-device communication on the same WiFi
+- Try accessing from your phone's browser: `http://YOUR_LOCAL_IP:8081`
 
 ### Games not loading
 - Clear your browser cache

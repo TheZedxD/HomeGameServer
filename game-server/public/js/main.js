@@ -306,9 +306,19 @@ async function loadNetworkInfo() {
     const parsedPort = Number.parseInt(data.port, 10);
     const resolvedPort = Number.isFinite(parsedPort) ? parsedPort : 8081;
 
-    const remoteUrl = `http://${resolvedIp}:${resolvedPort}`;
+    const networkUrl = `http://${resolvedIp}:${resolvedPort}`;
+    const localhostUrl = `http://localhost:${resolvedPort}`;
+
+    // Display IP prominently
     ipElement.textContent = resolvedIp;
-    urlElement.textContent = `${remoteUrl} / http://localhost:${resolvedPort}`;
+
+    // Create a more user-friendly URL display
+    urlElement.innerHTML = `
+      <strong style="color: #00ff00;">📱 ${networkUrl}</strong>
+      <span style="opacity: 0.7;">(for phones/tablets on same WiFi)</span>
+      <br>
+      💻 ${localhostUrl} (this device)
+    `;
   } catch (error) {
     console.warn('[NetworkInfo] Unable to load network info:', error);
     setUnknown();

@@ -174,9 +174,10 @@ const userStore = new UserStore();
 
 const app = express();
 const server = http.createServer(app);
-// CORS Configuration: Allow localhost by default, override with CORS_ORIGIN env var for LAN access
-// For LAN gaming, set CORS_ORIGIN='http://192.168.1.100:8081' or similar
-const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:8081';
+// CORS Configuration: Allow all origins for local/LAN gaming
+// This is safe because this server is designed for local home/LAN use only
+// Set CORS_ORIGIN env var to restrict if needed (e.g., 'http://192.168.1.100:8081')
+const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 const io = new Server(server, {
   cors: {
     origin: CORS_ORIGIN,
@@ -514,9 +515,8 @@ function startServer() {
     console.log('  HomeGameServer - Local Multiplayer Server');
     console.log('='.repeat(80));
     console.log(`  Environment: ${NODE_ENV}`);
-    console.log(`  Server: http://localhost:${PORT}`);
     console.log(`  Status: Ready for connections`);
-    console.log('='.repeat(80) + '\n');
+    console.log('='.repeat(80));
 
     // Get network info
     const networkInterfaces = require('os').networkInterfaces();
@@ -532,9 +532,13 @@ function startServer() {
       if (localIp !== '127.0.0.1') break;
     }
 
-    console.log(`  Local: http://localhost:${PORT}`);
-    console.log(`  Network: http://${localIp}:${PORT}`);
-    console.log('');
+    console.log('\n  📱 CONNECTION URLS:');
+    console.log('  ─────────────────────────────────────────────────────');
+    console.log(`  On this computer:   http://localhost:${PORT}`);
+    console.log(`  On your phone/tablet: http://${localIp}:${PORT}`);
+    console.log('  ─────────────────────────────────────────────────────');
+    console.log('\n  💡 TIP: Make sure your phone is on the same WiFi network!');
+    console.log('='.repeat(80) + '\n');
   });
 }
 
