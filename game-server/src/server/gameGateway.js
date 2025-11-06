@@ -276,13 +276,17 @@ class ModularGameServer extends EventEmitter {
 
         socket.on('playerReady', () => {
             const player = getPlayer();
-            if (!player?.inRoom) return;
+            if (!player || !player.inRoom) {
+                socket.emit('error', 'Player not found or not in a room');
+                return;
+            }
+            const playerRoomId = player.inRoom;
             try {
-                const updated = this.roomManager.toggleReady(player.inRoom, socket.id);
+                const updated = this.roomManager.toggleReady(playerRoomId, socket.id);
                 if (updated) {
-                    const room = this.roomManager.getRoom(player.inRoom);
+                    const room = this.roomManager.getRoom(playerRoomId);
                     if (room) {
-                        this.io.to(player.inRoom).emit('roomStateUpdate', this._enrichRoomData(room));
+                        this.io.to(playerRoomId).emit('roomStateUpdate', this._enrichRoomData(room));
                     }
                 }
             } catch (error) {
@@ -292,20 +296,27 @@ class ModularGameServer extends EventEmitter {
 
         socket.on('startGame', async () => {
             const player = getPlayer();
-            if (!player?.inRoom) return;
+            // Defensive check: ensure player exists and has a room
+            if (!player || !player.inRoom) {
+                socket.emit('error', 'Player not found or not in a room');
+                return;
+            }
 
-            if (startGameLocks.get(player.inRoom)) {
+            // Store room ID to avoid accessing player.inRoom after potential state changes
+            const playerRoomId = player.inRoom;
+
+            if (startGameLocks.get(playerRoomId)) {
                 socket.emit('error', 'Game is already starting');
                 return;
             }
 
-            const room = this.roomManager.getRoom(player.inRoom);
+            const room = this.roomManager.getRoom(playerRoomId);
             if (!room || room.hostId !== socket.id) {
                 socket.emit('error', 'Only the host can start the game.');
                 return;
             }
 
-            startGameLocks.set(player.inRoom, true);
+            startGameLocks.set(playerRoomId, true);
 
             try {
                 // Check if this is a casino game and prepare balances
@@ -328,21 +339,22 @@ class ModularGameServer extends EventEmitter {
                     }
                 }
 
-                this.roomManager.startGame(player.inRoom, { initialBalances });
+                this.roomManager.startGame(playerRoomId, { initialBalances });
             } catch (error) {
                 socket.emit('error', error.message);
             } finally {
                 setTimeout(() => {
-                    startGameLocks.delete(player.inRoom);
+                    startGameLocks.delete(playerRoomId);
                 }, 2000);
             }
         });
 
         socket.on('submitMove', (commandDescriptor = {}) => {
             const player = getPlayer();
-            if (!player?.inRoom) return;
+            if (!player || !player.inRoom) return;
+            const playerRoomId = player.inRoom;
             try {
-                this.roomManager.submitCommand(player.inRoom, { ...commandDescriptor, playerId: socket.id });
+                this.roomManager.submitCommand(playerRoomId, { ...commandDescriptor, playerId: socket.id });
             } catch (error) {
                 socket.emit('error', error.message);
             }
@@ -350,9 +362,10 @@ class ModularGameServer extends EventEmitter {
 
         socket.on('undoMove', () => {
             const player = getPlayer();
-            if (!player?.inRoom) return;
+            if (!player || !player.inRoom) return;
+            const playerRoomId = player.inRoom;
             try {
-                this.roomManager.undoLast(player.inRoom, socket.id);
+                this.roomManager.undoLast(playerRoomId, socket.id);
             } catch (error) {
                 socket.emit('error', error.message);
             }
@@ -360,14 +373,16 @@ class ModularGameServer extends EventEmitter {
 
         socket.on('leaveGame', () => {
             const player = getPlayer();
-            if (!player?.inRoom) return;
-            this._leaveRoom(socket, player.inRoom, clearPlayerRoom);
+            if (!player || !player.inRoom) return;
+            const playerRoomId = player.inRoom;
+            this._leaveRoom(socket, playerRoomId, clearPlayerRoom);
         });
 
         socket.on('disconnect', () => {
             const player = getPlayer();
-            if (player?.inRoom) {
-                this._leaveRoom(socket, player.inRoom, clearPlayerRoom, { disconnect: true });
+            if (player && player.inRoom) {
+                const playerRoomId = player.inRoom;
+                this._leaveRoom(socket, playerRoomId, clearPlayerRoom, { disconnect: true });
             }
         });
     }
@@ -380,8 +395,24 @@ class ModularGameServer extends EventEmitter {
             const playersBeforeLeave = room?.playerManager.players.size || 0;
 
             await this.roomManager.leaveRoom(roomId, socket.id);
-            socket.leave(roomId);
-            clearPlayerRoom();
+
+            // Safely handle socket.leave - socket might be disconnected
+            try {
+                if (socket && typeof socket.leave === 'function') {
+                    socket.leave(roomId);
+                }
+            } catch (socketError) {
+                this.logger.error('Failed to remove socket from room:', socketError);
+            }
+
+            // Safely execute clearPlayerRoom callback
+            try {
+                if (typeof clearPlayerRoom === 'function') {
+                    clearPlayerRoom();
+                }
+            } catch (callbackError) {
+                this.logger.error('Failed to clear player room:', callbackError);
+            }
 
             const roomAfterLeave = this.roomManager.getRoom(roomId);
             const playersAfterLeave = roomAfterLeave?.playerManager.players.size || 0;
@@ -397,16 +428,24 @@ class ModularGameServer extends EventEmitter {
                         this.io.to(roomId).emit('playerLeft', 'A player has disconnected. The match has ended.');
 
                         setTimeout(() => {
-                            this.io.to(roomId).emit('roomClosing', {
-                                roomId,
-                                reason: 'Player disconnected',
-                                secondsRemaining: 3,
-                            });
+                            try {
+                                this.io.to(roomId).emit('roomClosing', {
+                                    roomId,
+                                    reason: 'Player disconnected',
+                                    secondsRemaining: 3,
+                                });
 
-                            setTimeout(() => {
-                                this.io.to(roomId).emit('roomClosed', { roomId, reason: 'Player disconnected' });
-                                this.roomManager.deleteRoom(roomId);
-                            }, 3000);
+                                setTimeout(() => {
+                                    try {
+                                        this.io.to(roomId).emit('roomClosed', { roomId, reason: 'Player disconnected' });
+                                        this.roomManager.deleteRoom(roomId);
+                                    } catch (innerError) {
+                                        this.logger.error('Failed to close room in timeout:', innerError);
+                                    }
+                                }, 3000);
+                            } catch (outerError) {
+                                this.logger.error('Failed to emit room closing:', outerError);
+                            }
                         }, 1000);
                     }
                 } else {

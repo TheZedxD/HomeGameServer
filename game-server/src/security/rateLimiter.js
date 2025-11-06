@@ -10,8 +10,10 @@ class SlidingWindowRateLimiter {
     }
 
     allow(key, weight = 1) {
-        if (!key) {
-            return true;
+        // Ensure we always rate limit - use 'anonymous' bucket for invalid keys
+        // This prevents bypass attacks using falsy values (null, undefined, '', 0)
+        if (!key || typeof key !== 'string' || key.trim() === '') {
+            key = 'anonymous';
         }
         const now = Date.now();
         const bucket = this.storage.get(key) || [];
