@@ -165,7 +165,14 @@ class ModularGameServer extends EventEmitter {
     attachSocket(socket, { getPlayer, setPlayerRoom, clearPlayerRoom }) {
         const startGameLocks = new Map();
 
-        socket.emit('availableGames', this.registry.list().map(({ id, name, minPlayers, maxPlayers }) => ({ id, name, minPlayers, maxPlayers })));
+        socket.emit('availableGames', this.registry.list().map(({ id, name, minPlayers, maxPlayers, category, isCasino }) => ({
+            id,
+            name,
+            minPlayers,
+            maxPlayers,
+            category: category || 'other',
+            isCasino: isCasino || false
+        })));
         socket.emit('updateRoomList', {
             version: this.roomListVersion,
             rooms: this._serializeRooms(),

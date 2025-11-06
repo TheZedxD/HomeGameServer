@@ -48,7 +48,7 @@ function normalizeDefinition(definition = {}) {
     if (!definition || typeof definition !== 'object') {
         throw new TypeError('Game definition must be an object.');
     }
-    const { id, name, version, minPlayers, maxPlayers, create } = definition;
+    const { id, name, version, minPlayers, maxPlayers, create, category, isCasino, description, minBet, maxBet } = definition;
     if (!id || typeof id !== 'string') {
         throw new Error('Game definition requires an id.');
     }
@@ -62,6 +62,11 @@ function normalizeDefinition(definition = {}) {
         minPlayers: Number.isInteger(minPlayers) ? minPlayers : 2,
         maxPlayers: Number.isInteger(maxPlayers) ? maxPlayers : Math.max(4, minPlayers || 2),
         create,
+        category: category || 'other',
+        isCasino: isCasino || false,
+        description: description || '',
+        minBet: minBet || undefined,
+        maxBet: maxBet || undefined,
     };
 }
 
