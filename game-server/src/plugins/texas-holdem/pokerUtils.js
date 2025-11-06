@@ -58,7 +58,7 @@ function evaluateHand(cards) {
   for (const combo of combinations) {
     const evaluation = evaluateFiveCards(combo);
     if (evaluation.rank > bestRank ||
-        (evaluation.rank === bestRank && compareKickers(evaluation.kickers, bestHand.kickers) > 0)) {
+        (evaluation.rank === bestRank && bestHand && compareKickers(evaluation.kickers, bestHand.kickers) > 0)) {
       bestHand = evaluation;
       bestRank = evaluation.rank;
     }
