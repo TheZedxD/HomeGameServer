@@ -578,14 +578,14 @@ class ModularGameServer extends EventEmitter {
         }
     }
 
-    handleLeaveRoom(socket) {
+    async handleLeaveRoom(socket) {
         try {
             const rooms = Array.from(socket.rooms);
             for (const roomId of rooms) {
                 if (roomId !== socket.id) {
                     const room = this.roomManager.getRoom(roomId);
                     if (room) {
-                        this.roomManager.leaveRoom(roomId, socket.id);
+                        await this.roomManager.leaveRoom(roomId, socket.id);
                         socket.leave(roomId);
                     }
                 }

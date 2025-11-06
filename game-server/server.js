@@ -374,9 +374,9 @@ io.on('connection', (socket) => {
   });
 
   // Leave room
-  socket.on('leaveRoom', () => {
+  socket.on('leaveRoom', async () => {
     try {
-      const result = modularGameServer.handleLeaveRoom(socket);
+      const result = await modularGameServer.handleLeaveRoom(socket);
 
       if (result.success) {
         console.log(`[Socket] User ${socket.username} left room`);
@@ -440,11 +440,11 @@ io.on('connection', (socket) => {
   });
 
   // Disconnect
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     console.log(`[Socket] Client disconnected: ${socket.id} (${socket.username || 'unknown'})`);
 
     try {
-      modularGameServer.handleLeaveRoom(socket);
+      await modularGameServer.handleLeaveRoom(socket);
       emitOpenRoomsUpdate();
     } catch (error) {
       console.error('[Socket] Error during disconnect cleanup:', error);
