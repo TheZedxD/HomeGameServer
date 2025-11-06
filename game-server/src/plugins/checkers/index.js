@@ -16,22 +16,35 @@ class MovePieceStrategy {
             playerId,
         };
 
+        logger.info?.('[Checkers] Move request received', {
+            playerId,
+            from: payload?.from,
+            to: payload?.to || payload?.sequence?.[0],
+            currentTurn: state.currentPlayerId,
+            turnColor: state.turnColor,
+        });
+
         try {
             if (!playerManager.hasPlayer(playerId)) {
+                logger.warn?.('[Checkers] Player not in game', { playerId });
                 return { error: 'Player not part of this game.' };
             }
             if (state.isComplete) {
+                logger.warn?.('[Checkers] Series already complete');
                 return { error: 'Series already complete.' };
             }
             if (state.isRoundComplete) {
+                logger.warn?.('[Checkers] Round already complete');
                 return { error: 'Round already complete. Await reset.' };
             }
             const order = playerManager.list().map(p => p.id);
             if (!order.includes(playerId)) {
+                logger.warn?.('[Checkers] Player not in order', { playerId, order });
                 return { error: 'Unknown player turn.' };
             }
             const turnId = state.currentPlayerId || state.turn || state.playerOrder?.[0] || order[0];
             if (playerId !== turnId) {
+                logger.warn?.('[Checkers] Not player turn', { playerId, turnId, currentPlayer: state.currentPlayerId });
                 return { error: 'Not your turn.' };
             }
 
@@ -169,6 +182,15 @@ class MovePieceStrategy {
             } else if (playerPieces === 0 || !playerHasMoves) {
                 concludeRound(next, { winnerId: opponentId, winnerColor: opponentColor });
             }
+
+            logger.info?.('[Checkers] Move executed successfully', {
+                playerId,
+                nextTurn: nextTurnId,
+                nextTurnColor: next.turnColor,
+                captured: capturedAny,
+                promoted,
+                mustContinue: !!nextMustContinue,
+            });
 
             return {
                 apply() {

@@ -443,12 +443,36 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Game action
+  // Game action (legacy support)
   socket.on('gameAction', (action) => {
     try {
       modularGameServer.handleGameAction(socket, action);
     } catch (error) {
       emitSocketError({ socket, action: 'gameAction', error });
+    }
+  });
+
+  // Submit move (modern event handler)
+  socket.on('submitMove', (commandDescriptor) => {
+    try {
+      const rooms = Array.from(socket.rooms);
+      for (const roomId of rooms) {
+        if (roomId !== socket.id) {
+          const room = modularGameServer.roomManager.getRoom(roomId);
+          if (room && room.gameInstance) {
+            console.log(`[Socket] Player ${socket.username} (${socket.id}) submitting move in room ${roomId}`);
+            modularGameServer.roomManager.submitCommand(roomId, {
+              ...commandDescriptor,
+              playerId: socket.id
+            });
+            return;
+          }
+        }
+      }
+      socket.emit('error', { message: 'Not in an active game', code: 'NOT_IN_GAME' });
+    } catch (error) {
+      console.error('[Socket] submitMove error:', error);
+      emitSocketError({ socket, action: 'submitMove', error, message: error.message || 'Move failed' });
     }
   });
 
