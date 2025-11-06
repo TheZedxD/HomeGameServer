@@ -16,6 +16,9 @@ export class CheckersScene {
     this.selectedPiece = null;
     this.announcementElement = null;
     this.announcementTimeout = null;
+    this.validMoves = [];
+    this.lastMoveHighlight = null;
+    this.animatingPiece = null;
 
     this.handleBoardClick = this.handleBoardClick.bind(this);
   }
@@ -87,6 +90,33 @@ export class CheckersScene {
         const color = (x + y) % 2 === 0 ? lightSquareColor : darkSquareColor;
         this.ctx.fillStyle = color;
         this.ctx.fillRect(x * this.CELL_SIZE, y * this.CELL_SIZE, this.CELL_SIZE, this.CELL_SIZE);
+
+        // Highlight valid moves for selected piece
+        if (this.selectedPiece && this.validMoves.some(m => m.x === x && m.y === y)) {
+          this.ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
+          this.ctx.fillRect(x * this.CELL_SIZE, y * this.CELL_SIZE, this.CELL_SIZE, this.CELL_SIZE);
+
+          // Draw a circle to indicate valid move
+          this.ctx.beginPath();
+          this.ctx.arc(
+            x * this.CELL_SIZE + this.CELL_SIZE / 2,
+            y * this.CELL_SIZE + this.CELL_SIZE / 2,
+            15,
+            0,
+            Math.PI * 2
+          );
+          this.ctx.fillStyle = 'rgba(255, 255, 0, 0.5)';
+          this.ctx.fill();
+        }
+
+        // Highlight last move
+        if (this.lastMoveHighlight) {
+          if ((this.lastMoveHighlight.from.x === x && this.lastMoveHighlight.from.y === y) ||
+              (this.lastMoveHighlight.to.x === x && this.lastMoveHighlight.to.y === y)) {
+            this.ctx.fillStyle = 'rgba(100, 200, 255, 0.3)';
+            this.ctx.fillRect(x * this.CELL_SIZE, y * this.CELL_SIZE, this.CELL_SIZE, this.CELL_SIZE);
+          }
+        }
       }
     }
   }
@@ -204,6 +234,7 @@ export class CheckersScene {
       if (this.selectedPiece.x === gridX && this.selectedPiece.y === gridY) {
         // Clicked on same piece - deselect
         this.selectedPiece = null;
+        this.validMoves = [];
         this.render();
         return;
       }
@@ -211,7 +242,52 @@ export class CheckersScene {
 
     if (isMyPiece) {
       this.selectedPiece = { x: gridX, y: gridY };
+      this.calculateValidMoves(gridX, gridY, pieceAtClick);
       this.render();
+    }
+  }
+
+  calculateValidMoves(x, y, piece) {
+    this.validMoves = [];
+    if (!this.gameState?.board) return;
+
+    const pieceStr = String(piece).toLowerCase();
+    const isKing = piece === piece.toUpperCase() && piece !== piece.toLowerCase();
+
+    // Simple moves (one square diagonally)
+    const directions = isKing ?
+      [[-1, -1], [-1, 1], [1, -1], [1, 1]] :
+      pieceStr === 'r' ? [[-1, -1], [-1, 1]] : [[1, -1], [1, 1]];
+
+    for (const [dy, dx] of directions) {
+      const newY = y + dy;
+      const newX = x + dx;
+
+      if (newY >= 0 && newY < this.BOARD_SIZE && newX >= 0 && newX < this.BOARD_SIZE) {
+        if (!this.gameState.board[newY][newX]) {
+          this.validMoves.push({ x: newX, y: newY });
+        }
+      }
+
+      // Jump moves (two squares diagonally over an opponent)
+      const jumpY = y + dy * 2;
+      const jumpX = x + dx * 2;
+
+      if (jumpY >= 0 && jumpY < this.BOARD_SIZE && jumpX >= 0 && jumpX < this.BOARD_SIZE) {
+        const midY = y + dy;
+        const midX = x + dx;
+        const midPiece = this.gameState.board[midY][midX];
+
+        if (midPiece && !this.gameState.board[jumpY][jumpX]) {
+          const midPieceStr = String(midPiece).toLowerCase();
+          const isOpponent = (this.myColor === 'red' && midPieceStr === 'b') ||
+                             (this.myColor === 'black' && midPieceStr === 'r');
+
+          if (isOpponent) {
+            this.validMoves.push({ x: jumpX, y: jumpY });
+          }
+        }
+      }
     }
   }
 
@@ -221,15 +297,34 @@ export class CheckersScene {
       return;
     }
 
+    // Track last move for highlighting
+    if (newGameState.lastMove && newGameState.lastMove !== this.gameState?.lastMove) {
+      const move = newGameState.lastMove;
+      if (move.from && move.path && move.path.length > 0) {
+        this.lastMoveHighlight = {
+          from: { x: move.from.col, y: move.from.row },
+          to: { x: move.path[move.path.length - 1].col, y: move.path[move.path.length - 1].row }
+        };
+
+        // Clear highlight after 2 seconds
+        setTimeout(() => {
+          this.lastMoveHighlight = null;
+          this.render();
+        }, 2000);
+      }
+    }
+
     this.gameState = newGameState;
 
     if (!this.gameState?.board) {
       this.selectedPiece = null;
+      this.validMoves = [];
     } else if (this.selectedPiece) {
       const { x, y } = this.selectedPiece;
       const piece = this.gameState.board[y]?.[x];
       if (!piece) {
         this.selectedPiece = null;
+        this.validMoves = [];
       } else {
         // Check if the piece at the selected position is still ours
         const pieceStr = String(piece).toLowerCase();
@@ -238,9 +333,17 @@ export class CheckersScene {
           (this.myColor === 'black' && pieceStr === 'b');
         if (!stillMyPiece) {
           this.selectedPiece = null;
+          this.validMoves = [];
         }
       }
     }
+
+    // Clear selection if it's not our turn
+    if (this.gameState.turnColor && this.gameState.turnColor !== this.myColor) {
+      this.selectedPiece = null;
+      this.validMoves = [];
+    }
+
     this.render();
   }
 

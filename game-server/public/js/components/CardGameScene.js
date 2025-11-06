@@ -124,6 +124,16 @@ export class CardGameScene {
     const centerX = width / 2;
     const centerY = height / 2;
 
+    // Draw turn indicator
+    if (this.gameState.currentPlayerId) {
+      const isMyTurn = this.gameState.currentPlayerId === this.playerId;
+      const turnText = isMyTurn ? 'YOUR TURN - Click your deck to play!' : "Opponent's Turn";
+      this.ctx.fillStyle = isMyTurn ? '#22c55e' : '#ffffff';
+      this.ctx.font = 'bold 18px Arial';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(turnText, centerX, 30);
+    }
+
     // Draw played cards in center
     const playedCards = this.gameState.playedCards || {};
     const playerIds = Object.keys(playedCards);
@@ -134,12 +144,13 @@ export class CardGameScene {
         const x = centerX + (index === 0 ? -100 : 100);
         const y = centerY - this.cardHeight / 2;
         const playerName = this.gameState.players[pid]?.displayName || `Player ${index + 1}`;
+        const isCurrentPlayer = pid === this.playerId;
 
         this.drawCard(card, x, y, true);
 
-        // Draw player name
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = 'bold 14px Arial';
+        // Draw player name with highlight if it's them
+        this.ctx.fillStyle = isCurrentPlayer ? '#fbbf24' : '#ffffff';
+        this.ctx.font = isCurrentPlayer ? 'bold 16px Arial' : 'bold 14px Arial';
         this.ctx.textAlign = 'center';
         this.ctx.fillText(playerName, x + this.cardWidth / 2, y - 10);
       }
@@ -148,9 +159,12 @@ export class CardGameScene {
     // Draw war status
     if (this.gameState.isWar) {
       this.ctx.fillStyle = '#fbbf24';
-      this.ctx.font = 'bold 32px Arial';
+      this.ctx.font = 'bold 48px Arial';
       this.ctx.textAlign = 'center';
-      this.ctx.fillText('WAR!', centerX, 50);
+      this.ctx.strokeStyle = '#000000';
+      this.ctx.lineWidth = 3;
+      this.ctx.strokeText('WAR!', centerX, 80);
+      this.ctx.fillText('WAR!', centerX, 80);
     }
 
     // Draw player's hand at bottom
@@ -170,6 +184,17 @@ export class CardGameScene {
     const centerX = width / 2;
     const centerY = height / 2;
 
+    // Draw turn indicator
+    if (this.gameState.currentPlayerId) {
+      const isMyTurn = this.gameState.currentPlayerId === this.playerId;
+      const currentPlayer = this.gameState.players?.[this.gameState.currentPlayerId];
+      const turnText = isMyTurn ? 'YOUR TURN - Select a card!' : `${currentPlayer?.displayName || "Player"}'s Turn`;
+      this.ctx.fillStyle = isMyTurn ? '#22c55e' : '#ffffff';
+      this.ctx.font = 'bold 18px Arial';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(turnText, centerX, 30);
+    }
+
     // Draw current trick in center
     const currentTrick = this.gameState.currentTrick || [];
     const positions = [
@@ -184,8 +209,9 @@ export class CardGameScene {
       this.drawCard(play.card, pos.x - this.cardWidth / 2, pos.y - this.cardHeight / 2, true);
 
       // Draw player name
-      this.ctx.fillStyle = '#ffffff';
-      this.ctx.font = '12px Arial';
+      const isCurrentPlayer = play.playerId === this.playerId;
+      this.ctx.fillStyle = isCurrentPlayer ? '#fbbf24' : '#ffffff';
+      this.ctx.font = isCurrentPlayer ? 'bold 14px Arial' : '12px Arial';
       this.ctx.textAlign = 'center';
       this.ctx.fillText(play.playerName, pos.x, pos.y - this.cardHeight / 2 - 5);
     });
@@ -203,8 +229,8 @@ export class CardGameScene {
     if (this.gameState.heartsBroken) {
       this.ctx.fillStyle = '#dc2626';
       this.ctx.font = 'bold 16px Arial';
-      this.ctx.textAlign = 'left';
-      this.ctx.fillText('♥ Hearts Broken', 10, 30);
+      this.ctx.textAlign = 'right';
+      this.ctx.fillText('♥ Hearts Broken', width - 10, 30);
     }
   }
 
@@ -466,25 +492,71 @@ export class CardGameScene {
    * Handle card click
    */
   onCardClick(card) {
+    // Check if it's player's turn
+    if (this.gameState.currentPlayerId !== this.playerId) {
+      return;
+    }
+
     // Select card
     this.selectedCard = card;
     this.render();
 
     // Emit play card event based on game type
     if (this.gameState.gameType === 'war') {
+      // For War, play card immediately
       this.socket?.emit('submitMove', {
         type: 'playCard',
         playerId: this.playerId
       });
       this.selectedCard = null;
+
+      // Show brief feedback
+      this.showBriefMessage('Card Played!');
     } else if (this.gameState.gameType === 'hearts') {
+      // For Hearts, emit the specific card
       this.socket?.emit('submitMove', {
         type: 'playCard',
         playerId: this.playerId,
         payload: { cardId: card.id }
       });
       this.selectedCard = null;
+
+      // Show brief feedback
+      this.showBriefMessage('Card Played!');
     }
+  }
+
+  /**
+   * Show a brief message overlay
+   */
+  showBriefMessage(message) {
+    const messageEl = document.createElement('div');
+    messageEl.className = 'brief-message';
+    messageEl.textContent = message;
+    messageEl.style.cssText = `
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.8);
+      color: #fbbf24;
+      padding: 15px 30px;
+      border-radius: 8px;
+      font-size: 20px;
+      font-weight: bold;
+      z-index: 1000;
+      pointer-events: none;
+      animation: fadeOut 1s ease-out;
+    `;
+
+    const container = document.getElementById(this.containerId);
+    container.appendChild(messageEl);
+
+    setTimeout(() => {
+      if (messageEl.parentNode) {
+        messageEl.parentNode.removeChild(messageEl);
+      }
+    }, 1000);
   }
 
   /**

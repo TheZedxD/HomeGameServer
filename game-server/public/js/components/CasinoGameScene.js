@@ -156,6 +156,18 @@ export class CasinoGameScene {
     const state = this.gameState;
     const centerX = width / 2;
 
+    // Draw turn indicator if in playing phase
+    if (state.phase === 'playing' && state.currentPlayerId) {
+      const isMyTurn = state.currentPlayerId === this.playerId;
+      const currentPlayer = state.players?.[state.currentPlayerId] ||
+                          { displayName: 'Player' };
+      const turnText = isMyTurn ? 'YOUR TURN!' : `${currentPlayer.displayName}'s Turn`;
+      this.ctx.fillStyle = isMyTurn ? '#22c55e' : '#fbbf24';
+      this.ctx.font = 'bold 20px Arial';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(turnText, centerX, 25);
+    }
+
     // Draw dealer section at top
     this.drawDealerSection(centerX, 50, state);
 
@@ -183,6 +195,17 @@ export class CasinoGameScene {
     const state = this.gameState;
     const centerX = width / 2;
     const centerY = height / 2;
+
+    // Draw turn indicator
+    if (state.currentPlayerId && state.phase !== 'complete') {
+      const isMyTurn = state.currentPlayerId === this.playerId;
+      const currentPlayer = state.players?.[state.currentPlayerId] || { displayName: 'Player' };
+      const turnText = isMyTurn ? 'YOUR TURN - Choose an action!' : `${currentPlayer.displayName}'s Turn`;
+      this.ctx.fillStyle = isMyTurn ? '#22c55e' : '#fbbf24';
+      this.ctx.font = 'bold 18px Arial';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(turnText, centerX, 25);
+    }
 
     // Draw community cards in center
     this.drawCommunityCards(centerX, centerY - 100, state);
