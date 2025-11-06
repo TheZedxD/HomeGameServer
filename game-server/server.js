@@ -21,6 +21,29 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 const IS_PRODUCTION = NODE_ENV === 'production';
 
 // ============================================================================
+// Global Error Handlers
+// ============================================================================
+
+// Handle unhandled promise rejections to prevent silent failures
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Process] Unhandled Promise Rejection:', reason);
+  console.error('[Process] Promise:', promise);
+  // Log but don't crash in production - let the app continue running
+  if (!IS_PRODUCTION) {
+    console.error('[Process] Stack:', reason?.stack || 'No stack trace available');
+  }
+});
+
+// Handle uncaught exceptions - these are critical and should trigger shutdown
+process.on('uncaughtException', (error) => {
+  console.error('[Process] Uncaught Exception:', error);
+  console.error('[Process] Stack:', error.stack);
+  // Uncaught exceptions are serious - attempt graceful shutdown
+  console.error('[Process] Attempting graceful shutdown due to uncaught exception...');
+  process.exit(1);
+});
+
+// ============================================================================
 // Simple Username Storage
 // ============================================================================
 
@@ -151,10 +174,14 @@ const userStore = new UserStore();
 
 const app = express();
 const server = http.createServer(app);
+// CORS Configuration: Allow localhost by default, override with CORS_ORIGIN env var for LAN access
+// For LAN gaming, set CORS_ORIGIN='http://192.168.1.100:8081' or similar
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:8081';
 const io = new Server(server, {
   cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
+    origin: CORS_ORIGIN,
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
