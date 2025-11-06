@@ -1,6 +1,3 @@
-const RED_PIECES = new Set([1, 3]);
-const BLACK_PIECES = new Set([2, 4]);
-
 export class CheckersScene {
   constructor(config = {}) {
     const { socket, myColor, gameState, roundMessage, containerId = 'game-container' } = config;
@@ -104,11 +101,14 @@ export class CheckersScene {
 
     for (let y = 0; y < this.BOARD_SIZE; y++) {
       for (let x = 0; x < this.BOARD_SIZE; x++) {
-        const pieceType = this.gameState.board[y]?.[x] ?? 0;
+        const pieceType = this.gameState.board[y]?.[x];
         if (!pieceType) continue;
 
-        const isKing = pieceType === 3 || pieceType === 4;
-        const isRedPiece = RED_PIECES.has(pieceType);
+        // Server sends 'r', 'R' (red pieces), 'b', 'B' (black pieces)
+        // 'R' and 'B' are kings (uppercase)
+        const pieceStr = String(pieceType).toLowerCase();
+        const isKing = pieceType === pieceType.toUpperCase() && pieceType !== pieceType.toLowerCase();
+        const isRedPiece = pieceStr === 'r';
         const centerX = x * this.CELL_SIZE + this.CELL_SIZE / 2;
         const centerY = y * this.CELL_SIZE + this.CELL_SIZE / 2;
         const fillColor = isRedPiece ? '#c0392b' : '#1e1b1b';
@@ -166,38 +166,47 @@ export class CheckersScene {
       return;
     }
 
-    const pieceAtClick = this.gameState.board[gridY]?.[gridX] ?? 0;
+    const pieceAtClick = this.gameState.board[gridY]?.[gridX];
+    if (!pieceAtClick) {
+      // Clicked on empty square
+      if (this.selectedPiece) {
+        // Try to move
+        const from = {
+          row: this.selectedPiece.y,
+          col: this.selectedPiece.x,
+        };
+        const destination = {
+          row: gridY,
+          col: gridX,
+        };
+
+        this.socket?.emit('submitMove', {
+          type: 'movePiece',
+          payload: {
+            from,
+            to: destination,
+            sequence: [destination],
+          },
+        });
+        this.selectedPiece = null;
+        this.render();
+      }
+      return;
+    }
+
+    // Server sends 'r'/'R' for red, 'b'/'B' for black
+    const pieceStr = String(pieceAtClick).toLowerCase();
     const isMyPiece =
-      (this.myColor === 'red' && RED_PIECES.has(pieceAtClick)) ||
-      (this.myColor === 'black' && BLACK_PIECES.has(pieceAtClick));
+      (this.myColor === 'red' && pieceStr === 'r') ||
+      (this.myColor === 'black' && pieceStr === 'b');
 
     if (this.selectedPiece) {
       if (this.selectedPiece.x === gridX && this.selectedPiece.y === gridY) {
+        // Clicked on same piece - deselect
         this.selectedPiece = null;
         this.render();
         return;
       }
-
-      const from = {
-        row: this.selectedPiece.y,
-        col: this.selectedPiece.x,
-      };
-      const destination = {
-        row: gridY,
-        col: gridX,
-      };
-
-      this.socket?.emit('submitMove', {
-        type: 'movePiece',
-        payload: {
-          from,
-          to: destination,
-          sequence: [destination],
-        },
-      });
-      this.selectedPiece = null;
-      this.render();
-      return;
     }
 
     if (isMyPiece) {
@@ -218,12 +227,18 @@ export class CheckersScene {
       this.selectedPiece = null;
     } else if (this.selectedPiece) {
       const { x, y } = this.selectedPiece;
-      const piece = this.gameState.board[y]?.[x] ?? 0;
-      const stillMyPiece =
-        (this.myColor === 'red' && RED_PIECES.has(piece)) ||
-        (this.myColor === 'black' && BLACK_PIECES.has(piece));
-      if (!stillMyPiece) {
+      const piece = this.gameState.board[y]?.[x];
+      if (!piece) {
         this.selectedPiece = null;
+      } else {
+        // Check if the piece at the selected position is still ours
+        const pieceStr = String(piece).toLowerCase();
+        const stillMyPiece =
+          (this.myColor === 'red' && pieceStr === 'r') ||
+          (this.myColor === 'black' && pieceStr === 'b');
+        if (!stillMyPiece) {
+          this.selectedPiece = null;
+        }
       }
     }
     this.render();
