@@ -210,14 +210,24 @@ export class CheckersScene {
           col: gridX,
         };
 
-        this.socket?.emit('submitMove', {
+        const moveCommand = {
           type: 'movePiece',
           payload: {
             from,
             to: destination,
             sequence: [destination],
           },
+        };
+
+        console.log('[CheckersScene] Submitting move:', {
+          from,
+          to: destination,
+          myColor: this.myColor,
+          turnColor: this.gameState.turnColor,
+          command: moveCommand
         });
+
+        this.socket?.emit('submitMove', moveCommand);
         this.selectedPiece = null;
         this.render();
       }

@@ -282,7 +282,15 @@ export class GameManager {
       this.leaveGame();
       this.uiManager.showToast('Room has been closed', 'info');
     });
-    this.socket.on('error', (message) => {
+    this.socket.on('error', (errorPayload) => {
+      // Handle both string errors and error objects
+      let message = errorPayload;
+      if (typeof errorPayload === 'object' && errorPayload !== null) {
+        message = errorPayload.message || errorPayload.error || JSON.stringify(errorPayload);
+      }
+
+      console.error('[GameManager] Server error:', errorPayload);
+
       if (typeof message === 'string' && message.includes('does not exist')) {
         const codeInput = this.uiManager.elements.lobby.onlineRoomCodeInput;
         const roomCode = (codeInput?.value || '').trim().toUpperCase();
@@ -291,7 +299,23 @@ export class GameManager {
           return;
         }
       }
-      this.uiManager.showToast(message, 'error');
+
+      // Show user-friendly error messages
+      if (typeof message === 'string') {
+        if (message.includes('Not your turn')) {
+          this.uiManager.showToast('It\'s not your turn yet!', 'warning');
+        } else if (message.includes('Invalid move')) {
+          this.uiManager.showToast('Invalid move - please try again', 'error');
+        } else if (message.includes('Capture available')) {
+          this.uiManager.showToast('You must capture when possible!', 'warning');
+        } else if (message.includes('Must continue capturing')) {
+          this.uiManager.showToast('You must continue capturing!', 'warning');
+        } else {
+          this.uiManager.showToast(message, 'error');
+        }
+      } else {
+        this.uiManager.showToast('An error occurred', 'error');
+      }
     });
     this.socket.on('playerLeft', (message) => this.uiManager.showToast(message, 'info'));
     this.socket.on('illegalMove', (message) => this.uiManager.showToast(message, 'error'));
