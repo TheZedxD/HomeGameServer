@@ -46,7 +46,31 @@ esac
 
 if [ "$has_start" = true ]; then
     echo "[*] Starting via npm start..."
-    npm start
+    port_value=${PORT:-8081}
+
+    # Get local IP
+    server_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    if [ -z "$server_ip" ]; then
+        server_ip="127.0.0.1"
+    fi
+
+    npm start &
+    server_pid=$!
+
+    trap 'kill "$server_pid" 2>/dev/null || true' INT TERM
+
+    echo ""
+    echo "========================================="
+    echo "  HomeGameServer is running!"
+    echo "========================================="
+    echo "Local:   http://localhost:$port_value"
+    echo "Network: http://$server_ip:$port_value"
+    echo ""
+    echo "Open the Network URL on other devices to connect"
+    echo "[*] Press Ctrl+C to stop the server."
+    echo ""
+
+    wait "$server_pid"
     exit $?
 fi
 

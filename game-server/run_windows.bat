@@ -77,9 +77,16 @@ if defined SERVER_IP (
 )
 if not defined SERVER_IP set "SERVER_IP=127.0.0.1"
 
-echo [*] Starting server on :%PORT%
-echo Server running at http://%SERVER_IP%:%PORT% and http://localhost:%PORT%
+echo.
+echo =========================================
+echo   HomeGameServer is starting...
+echo =========================================
+echo Local:   http://localhost:%PORT%
+echo Network: http://%SERVER_IP%:%PORT%
+echo.
+echo Open the Network URL on other devices to connect
 echo [*] Press Ctrl+C to stop the server.
+echo.
 call npm start
 
 if errorlevel 1 (

@@ -11,6 +11,7 @@ const fs = require('fs');
 const { Server } = require('socket.io');
 const { createModularGameServer } = require('./src/server/gameGateway');
 const { metricsCollector } = require('./src/monitoring/metrics');
+const { SessionManager } = require('./src/utils/sessionManager');
 
 // ============================================================================
 // Configuration
@@ -169,6 +170,12 @@ class UserStore {
 const userStore = new UserStore();
 
 // ============================================================================
+// Session Manager for Reconnection Support
+// ============================================================================
+
+const sessionManager = new SessionManager(300000); // 5 minutes session timeout
+
+// ============================================================================
 // Express App Setup
 // ============================================================================
 
@@ -315,11 +322,38 @@ io.on('connection', (socket) => {
   // Store username on socket
   socket.username = null;
 
-  // User identification
-  socket.on('identify', ({ username }) => {
+  // User identification with reconnection support
+  socket.on('identify', ({ username, attemptReconnect = true }) => {
     try {
       const user = userStore.getOrCreate(username);
       socket.username = user.username;
+
+      // Check for existing session and attempt reconnection
+      let reconnectInfo = null;
+      if (attemptReconnect && sessionManager.hasActiveSession(username)) {
+        const result = sessionManager.attemptReconnect(socket.id, username);
+        if (result.canReconnect) {
+          console.log(`[Socket] User reconnected: ${socket.username} (${socket.id}) - Previous session restored`);
+          reconnectInfo = {
+            reconnected: true,
+            roomId: result.roomId,
+            message: 'Previous session restored'
+          };
+
+          // If user was in a room, rejoin it
+          if (result.roomId) {
+            socket.join(result.roomId);
+            const room = modularGameServer.roomManager.getRoom(result.roomId);
+            if (room) {
+              socket.emit('joinedMatchLobby', { room: room.toJSON(), yourId: socket.id });
+              io.to(result.roomId).emit('roomStateUpdate', room.toJSON());
+            }
+          }
+        }
+      }
+
+      // Register new session or update existing
+      sessionManager.registerSession(socket.id, user.username);
 
       console.log(`[Socket] User identified: ${socket.username} (${socket.id}) - Credits: ${user.credits}`);
 
@@ -330,7 +364,8 @@ io.on('connection', (socket) => {
           losses: user.losses,
           gamesPlayed: user.gamesPlayed,
           credits: user.credits
-        }
+        },
+        reconnect: reconnectInfo
       });
     } catch (error) {
       emitSocketError({ socket, action: 'identify', error });
@@ -364,6 +399,8 @@ io.on('connection', (socket) => {
 
       if (result.success) {
         console.log(`[Socket] Room created: ${result.roomId} by ${socket.username}`);
+        // Update session with room info
+        sessionManager.setSessionRoom(socket.id, result.roomId);
         emitOpenRoomsUpdate();
         // Emit the correct event that client expects
         socket.emit('joinedMatchLobby', { room: result.room, yourId: socket.id });
@@ -388,6 +425,8 @@ io.on('connection', (socket) => {
 
       if (result.success) {
         console.log(`[Socket] User ${socket.username} joined room: ${roomId}`);
+        // Update session with room info
+        sessionManager.setSessionRoom(socket.id, roomId);
         emitOpenRoomsUpdate();
         // Emit the correct event that client expects
         socket.emit('joinedMatchLobby', { room: result.room, yourId: socket.id });
@@ -408,6 +447,8 @@ io.on('connection', (socket) => {
 
       if (result.success) {
         console.log(`[Socket] User ${socket.username} left room`);
+        // Update session - remove room info
+        sessionManager.setSessionRoom(socket.id, null);
         emitOpenRoomsUpdate();
         socket.emit('roomLeft', result);
       }
@@ -491,12 +532,26 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Disconnect
-  socket.on('disconnect', async () => {
-    console.log(`[Socket] Client disconnected: ${socket.id} (${socket.username || 'unknown'})`);
+  // Disconnect - keep session for potential reconnection
+  socket.on('disconnect', async (reason) => {
+    console.log(`[Socket] Client disconnected: ${socket.id} (${socket.username || 'unknown'}) - Reason: ${reason}`);
 
     try {
-      await modularGameServer.handleLeaveRoom(socket);
+      // Update session activity but don't remove it yet
+      // This allows reconnection within the timeout window
+      sessionManager.updateActivity(socket.id);
+
+      // For intentional disconnects (client closing), clean up immediately
+      // For network issues, keep the session for reconnection
+      if (reason === 'client namespace disconnect' || reason === 'server namespace disconnect') {
+        console.log(`[Socket] Intentional disconnect - cleaning up session for ${socket.username}`);
+        await modularGameServer.handleLeaveRoom(socket);
+        sessionManager.removeSession(socket.id);
+      } else {
+        console.log(`[Socket] Network disconnect - keeping session for ${socket.username} (reconnect available for 5 minutes)`);
+        // Don't remove from room immediately - give them a chance to reconnect
+      }
+
       emitOpenRoomsUpdate();
     } catch (error) {
       console.error('[Socket] Error during disconnect cleanup:', error);
@@ -556,6 +611,9 @@ function shutdown() {
 
   // Save user data
   userStore.save();
+
+  // Cleanup session manager
+  sessionManager.shutdown();
 
   // Close server
   server.close(() => {
