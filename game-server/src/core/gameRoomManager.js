@@ -3,6 +3,7 @@
 const EventEmitter = require('events');
 const GameRoom = require('./gameRoom');
 const { generateRoomId } = require('./utils');
+const { createGameLogger } = require('../utils/gameLogger');
 
 class GameRoomManager extends EventEmitter {
     constructor({ gameFactory, repository, logger = console }) {
@@ -11,6 +12,11 @@ class GameRoomManager extends EventEmitter {
         this.repository = repository;
         this.rooms = new Map();
         this.logger = logger;
+
+        // Start periodic cleanup
+        this.cleanupInterval = setInterval(() => {
+            this.performCleanup();
+        }, 60000); // Every minute
     }
 
     _logError(action, error, context = {}) {
@@ -187,6 +193,12 @@ class GameRoomManager extends EventEmitter {
                 maxPlayers: definition.maxPlayers,
                 initialBalances: options.initialBalances || {},
             });
+
+            // Create game logger for detailed tracking
+            const gameLogger = createGameLogger(roomId, room.gameId);
+            room.gameLogger = gameLogger;
+            gameLogger.logGameStart(room.playerManager.list(), gameInstance.getState());
+
             synchronizer = room.attachGame(gameInstance);
             synchronizer.on('sync', async (payload) => {
                 try {
@@ -202,6 +214,10 @@ class GameRoomManager extends EventEmitter {
             synchronizer.on('roundEnd', forwardRoundEnd);
             room.once('gameDetached', () => {
                 synchronizer.off('roundEnd', forwardRoundEnd);
+                if (room.gameLogger) {
+                    const finalState = gameInstance.getState();
+                    room.gameLogger.logGameEnd(finalState.winner, finalState);
+                }
             });
             this.emit('gameStarted', { roomId, state: gameInstance.getState() });
             return { room, gameInstance };
@@ -225,10 +241,36 @@ class GameRoomManager extends EventEmitter {
         }
         const context = { action: 'submitCommand', roomId, playerId: commandDescriptor?.playerId || null };
         try {
+            const oldState = room.gameInstance.getState();
             const outcome = room.gameInstance.commandBus.dispatch(commandDescriptor);
+
+            // Log the move and state changes
+            if (room.gameLogger) {
+                const success = !outcome.error;
+                room.gameLogger.logMove(
+                    commandDescriptor.playerId,
+                    commandDescriptor,
+                    success,
+                    outcome.error ? new Error(outcome.error) : null
+                );
+
+                if (success) {
+                    const newState = room.gameInstance.getState();
+                    room.gameLogger.logStateChange(oldState, newState, 'command_executed');
+                    room.gameLogger.logTurn(
+                        commandDescriptor.playerId,
+                        newState.currentPlayerId || newState.turn,
+                        { command: commandDescriptor.type || commandDescriptor.action }
+                    );
+                }
+            }
+
             this.emit('roomUpdated', room.toJSON());
             return outcome;
         } catch (error) {
+            if (room.gameLogger) {
+                room.gameLogger.logError(commandDescriptor.playerId, error, { command: commandDescriptor });
+            }
             this._logError('submitCommand', error, context);
             throw error;
         }
@@ -248,6 +290,58 @@ class GameRoomManager extends EventEmitter {
             this._logError('undoLast', error, context);
             throw error;
         }
+    }
+
+    /**
+     * Perform periodic cleanup of rooms and disconnected players
+     */
+    performCleanup() {
+        try {
+            let inactiveRooms = 0;
+            let disconnectedPlayers = 0;
+
+            for (const [roomId, room] of this.rooms) {
+                // Clean up disconnected players in each room
+                const removedCount = room.cleanupDisconnectedPlayers(300000); // 5 minutes
+                disconnectedPlayers += removedCount;
+
+                // Clean up inactive rooms (no players and inactive for 30 minutes)
+                if (room.playerManager.players.size === 0 && room.isInactive(1800000)) {
+                    this.logger.info?.(`[GameRoomManager] Removing inactive room ${roomId}`);
+                    this.deleteRoom(roomId);
+                    inactiveRooms++;
+                }
+            }
+
+            if (inactiveRooms > 0 || disconnectedPlayers > 0) {
+                this.logger.info?.(`[GameRoomManager] Cleanup: removed ${inactiveRooms} inactive room(s), ${disconnectedPlayers} disconnected player(s)`);
+            }
+        } catch (error) {
+            this.logger.error?.('[GameRoomManager] Error during cleanup:', error);
+        }
+    }
+
+    /**
+     * Shutdown - clean up all resources
+     */
+    shutdown() {
+        if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval);
+            this.cleanupInterval = null;
+        }
+
+        // Clean up all rooms
+        for (const roomId of this.rooms.keys()) {
+            try {
+                const room = this.rooms.get(roomId);
+                room?.dispose?.();
+                this.rooms.delete(roomId);
+            } catch (error) {
+                this.logger.error?.(`[GameRoomManager] Error cleaning up room ${roomId}:`, error);
+            }
+        }
+
+        this.removeAllListeners();
     }
 }
 
